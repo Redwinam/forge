@@ -3,18 +3,16 @@
     windows_subsystem = "windows"
 )]
 
-use serde::{Serialize, Deserialize};
+use serde::{Serialize};
 use std::fs;
 use std::path::Path;
 use std::collections::HashMap;
-use tauri::Wry;
 use tauri_plugin_store::StoreExt;
-use serde_json::Value;
 use reqwest::blocking::Client;
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
 use hex;
-use chrono::{Utc, Duration};
+use chrono::{Utc};
 
 #[derive(Serialize, Clone)]
 struct FileEntry {

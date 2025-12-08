@@ -22,7 +22,7 @@ const selected = computed(() => props.selected);
 <style lang="scss">
 .image-node-view {
   display: block;
-  margin: 1.5rem 0;
+  margin: 0.5rem 0; // Reduced from 1.5rem to 0.5rem
   line-height: 0; // Prevent extra space for inline-block
   position: relative;
   

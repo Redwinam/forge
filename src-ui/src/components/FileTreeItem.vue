@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { File, Folder, ChevronRight, ChevronDown } from 'lucide-vue-next';
 import { clsx } from 'clsx';
@@ -23,6 +23,23 @@ const emit = defineEmits<{
 
 const isOpen = ref(false);
 const children = ref<FileEntry[]>([]);
+
+// Auto-expand if currentFile is inside this directory
+watch(() => props.currentFile, async (newVal) => {
+  if (newVal && props.entry.is_dir && newVal.startsWith(props.entry.path + '/')) {
+    if (!isOpen.value) {
+        isOpen.value = true;
+        if (children.value.length === 0) {
+            try {
+                const files = await invoke<FileEntry[]>('list_files', { path: props.entry.path });
+                children.value = files;
+            } catch (e) {
+                console.error(e);
+            }
+        }
+    }
+  }
+}, { immediate: true });
 
 const toggleOpen = async (e: MouseEvent) => {
   e.stopPropagation();
