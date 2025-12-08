@@ -4,6 +4,7 @@ import { useEditor, EditorContent } from '@tiptap/vue-3';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from 'tiptap-markdown';
 import Image from '@tiptap/extension-image';
+import CustomImage from './editor/image-extension';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import Underline from '@tiptap/extension-underline';
@@ -46,16 +47,6 @@ const parseContent = (fullContent: string) => {
       
       metadata.value = parsedData || {};
       
-      // Fix for escaped headings or horizontal rules after images
-      // Tiptap's markdown parser requires block elements to be separated by blank lines.
-      // If an image is immediately followed by a heading (#) or horizontal rule (---) or any other text,
-      // it gets parsed incorrectly or escaped.
-      // We aggressively ensure double newlines after images if they are followed by ANY content.
-      bodyContent = bodyContent.replace(/(!\[.*?\]\(.*?\))([^\s\r\n])/g, '$1\n\n$2');
-      
-      // Also handle cases where there might be single newlines or spaces but not enough to form a block
-      bodyContent = bodyContent.replace(/(!\[.*?\]\(.*?\))[\s\r\n]+([^\s\r\n])/g, '$1\n\n$2');
-      
       return bodyContent;
     } catch (e) {
       console.error("Failed to parse YAML", e);
@@ -69,17 +60,13 @@ const parseContent = (fullContent: string) => {
 };
 
 const stringifyContent = (body: string) => {
-  // Ensure images are always followed by a blank line in the saved markdown
-  // This prevents the "compressed to one line" issue when reloading
-  let cleanBody = body.replace(/(!\[.*?\]\(.*?\))([ \t]*)(?=\S)/g, '$1\n\n');
-  
-  if (Object.keys(metadata.value).length === 0) return cleanBody;
+  if (Object.keys(metadata.value).length === 0) return body;
   try {
     const yamlString = yaml.dump(metadata.value);
-    return `---\n${yamlString}---\n${cleanBody}`;
+    return `---\n${yamlString}---\n${body}`;
   } catch (e) {
     console.error("Failed to stringify YAML", e);
-    return cleanBody;
+    return body;
   }
 };
 
@@ -131,7 +118,7 @@ const editor = useEditor({
       linkify: true, // Auto-link URLs
       breaks: true, // Convert newlines to hard breaks
     }),
-    Image,
+    CustomImage,
     Link.configure({
       openOnClick: false,
     }),
@@ -168,9 +155,9 @@ const editor = useEditor({
       const items = Array.from(event.clipboardData?.items || []);
       const item = items.find(item => item.type.indexOf('image') === 0);
       if (item) {
-        event.preventDefault();
         const file = item.getAsFile();
         if (file) {
+          event.preventDefault();
           isUploading.value = true;
           uploadImage(file)
             .then(url => {
@@ -178,8 +165,8 @@ const editor = useEditor({
             })
             .catch(err => alert("Upload failed: " + err))
             .finally(() => isUploading.value = false);
+          return true;
         }
-        return true;
       }
       return false;
     },
@@ -493,12 +480,11 @@ li.task-list-item > div > p {
 }
 
 /* Images */
+/* handled by ImageNode.vue now, but keep generic styles just in case */
 .ProseMirror img {
   max-width: 100%;
   height: auto;
   border-radius: 0.5rem;
-  margin: 1.5rem 0;
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
 }
 
 /* Links */
