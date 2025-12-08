@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useEditor, EditorContent } from '@tiptap/vue-3';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from 'tiptap-markdown';
@@ -9,7 +9,8 @@ import Placeholder from '@tiptap/extension-placeholder';
 import { invoke } from '@tauri-apps/api/core';
 import COS from 'cos-js-sdk-v5';
 import SparkMD5 from 'spark-md5';
-import { Bold, Italic, Strikethrough, Code, List, ListOrdered, Quote, Undo, Redo, Image as ImageIcon } from 'lucide-vue-next';
+import { Bold, Italic, Strikethrough, Code, List, ListOrdered, Quote, Undo, Redo, Image as ImageIcon, Eye, EyeOff } from 'lucide-vue-next';
+import matter from 'gray-matter';
 
 interface CosConfig {
   secret_id: string;
@@ -31,6 +32,24 @@ const emit = defineEmits<{
 
 const cosConfig = ref<CosConfig | null>(null);
 const isUploading = ref(false);
+const metadata = ref<Record<string, any>>({});
+const showMetadata = ref(true);
+
+// Parse frontmatter
+const parseContent = (fullContent: string) => {
+  try {
+    const parsed = matter(fullContent);
+    metadata.value = parsed.data;
+    return parsed.content;
+  } catch (e) {
+    console.error("Failed to parse frontmatter", e);
+    return fullContent;
+  }
+};
+
+const stringifyContent = (body: string) => {
+  return matter.stringify(body, metadata.value);
+};
 
 onMounted(() => {
   if (props.envPath) {
@@ -102,9 +121,13 @@ const uploadImage = async (file: File): Promise<string> => {
 };
 
 const editor = useEditor({
-  content: props.content,
+  content: parseContent(props.content),
   extensions: [
-    StarterKit,
+    StarterKit.configure({
+      heading: {
+        levels: [1, 2, 3, 4, 5, 6],
+      },
+    }),
     Markdown,
     Image,
     Link.configure({
@@ -115,6 +138,9 @@ const editor = useEditor({
     }),
   ],
   editorProps: {
+    attributes: {
+      class: 'prose prose-lg prose-blue max-w-none focus:outline-none'
+    },
     handlePaste: (_view, event) => {
       const items = Array.from(event.clipboardData?.items || []);
       const item = items.find(item => item.type.indexOf('image') === 0);
@@ -156,10 +182,14 @@ const editor = useEditor({
 });
 
 // Update content when props change
-import { watch } from 'vue';
 watch(() => props.content, (newContent) => {
-  if (editor.value && newContent !== (editor.value.storage as any).markdown.getMarkdown()) {
-    editor.value.commands.setContent(newContent);
+  // We need to check if the content *actually* changed from outside
+  // Re-parsing every time might be heavy but ensures sync.
+  // To avoid loop, we compare stringified version?
+  // Or simpler: just parse and set content if editor content differs.
+  const newBody = parseContent(newContent);
+  if (editor.value && newBody !== (editor.value.storage as any).markdown.getMarkdown()) {
+    editor.value.commands.setContent(newBody);
   }
 });
 
@@ -188,8 +218,9 @@ const handleKeyDown = (e: KeyboardEvent) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 's') {
     e.preventDefault();
     if (editor.value) {
-      const markdown = (editor.value.storage as any).markdown.getMarkdown();
-      emit('save', markdown);
+      const markdownBody = (editor.value.storage as any).markdown.getMarkdown();
+      const fullContent = stringifyContent(markdownBody);
+      emit('save', fullContent);
     }
   }
 };
@@ -206,6 +237,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex flex-col h-full relative">
+    <!-- Toolbar -->
     <div v-if="editor" class="flex items-center gap-1 p-2 border-b border-gray-200 bg-white sticky top-0 z-10 overflow-x-auto">
       <button @click="editor.chain().focus().toggleBold().run()" :class="{ 'bg-gray-200': editor.isActive('bold') }" class="p-1.5 rounded hover:bg-gray-100" title="Bold">
         <Bold :size="18" />
@@ -235,7 +267,14 @@ onBeforeUnmount(() => {
       <button @click="handleImageUploadClick" class="p-1.5 rounded hover:bg-gray-100" title="Upload Image">
         <ImageIcon :size="18" />
       </button>
+      
       <div class="flex-1"></div>
+      
+      <button @click="showMetadata = !showMetadata" class="p-1.5 rounded hover:bg-gray-100 mr-2" :title="showMetadata ? 'Hide Metadata' : 'Show Metadata'">
+        <Eye v-if="showMetadata" :size="18" />
+        <EyeOff v-else :size="18" />
+      </button>
+
       <button @click="editor.chain().focus().undo().run()" :disabled="!editor.can().undo()" class="p-1.5 rounded hover:bg-gray-100 disabled:opacity-50" title="Undo">
         <Undo :size="18" />
       </button>
@@ -244,11 +283,28 @@ onBeforeUnmount(() => {
       </button>
     </div>
 
+    <!-- Metadata Panel -->
+    <div v-if="showMetadata && Object.keys(metadata).length > 0" class="bg-gray-50 border-b border-gray-200 px-8 py-4">
+      <div class="grid grid-cols-1 gap-4 max-w-3xl">
+        <div v-for="(value, key) in metadata" :key="key" class="flex flex-col">
+          <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">{{ key }}</label>
+          <input 
+            v-if="typeof value === 'string' || typeof value === 'number'"
+            v-model="metadata[key]" 
+            class="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm"
+          />
+          <div v-else class="text-sm text-gray-500 italic">
+            Complex value (editing not supported yet)
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div v-if="isUploading" class="absolute top-14 right-4 z-20 bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm shadow-md animate-pulse">
       Uploading image...
     </div>
 
-    <editor-content :editor="editor" class="flex-1 overflow-y-auto px-8 py-6 prose prose-lg prose-blue max-w-none outline-none" />
+    <editor-content :editor="editor" class="flex-1 overflow-y-auto px-8 py-6" />
   </div>
 </template>
 
@@ -303,5 +359,29 @@ onBeforeUnmount(() => {
   padding: 0;
   background: none;
   font-size: 0.8rem;
+}
+
+/* Headings */
+.ProseMirror h1 {
+  font-size: 2.25em;
+  font-weight: 800;
+  margin-top: 0.8em;
+  margin-bottom: 0.4em;
+  line-height: 1.1;
+}
+
+.ProseMirror h2 {
+  font-size: 1.5em;
+  font-weight: 700;
+  margin-top: 0.8em;
+  margin-bottom: 0.4em;
+  line-height: 1.3;
+}
+
+.ProseMirror h3 {
+  font-size: 1.25em;
+  font-weight: 600;
+  margin-top: 0.6em;
+  margin-bottom: 0.3em;
 }
 </style>
