@@ -12,7 +12,6 @@ const currentContent = ref('');
 const isSettingsOpen = ref(false);
 
 const rootPath = ref(localStorage.getItem('forge_root_path') || '/Users/redwinam/Developer/notes/Press/docs');
-const envPath = ref(localStorage.getItem('forge_env_path') || '/Users/redwinam/Developer/notes/Press/.env');
 
 const loadLastOpenedFile = async () => {
   try {
@@ -58,11 +57,9 @@ const handleSave = async (content: string) => {
   }
 };
 
-const handleSaveSettings = (newRootPath: string, newEnvPath: string) => {
+const handleSaveSettings = (newRootPath: string) => {
   rootPath.value = newRootPath;
-  envPath.value = newEnvPath;
   localStorage.setItem('forge_root_path', newRootPath);
-  localStorage.setItem('forge_env_path', newEnvPath);
 };
 </script>
 
@@ -80,7 +77,6 @@ const handleSaveSettings = (newRootPath: string, newEnvPath: string) => {
         :key="currentPath"
         :content="currentContent"
         :filePath="currentPath"
-        :envPath="envPath"
         @save="handleSave"
         class="flex-1"
       />
@@ -92,7 +88,6 @@ const handleSaveSettings = (newRootPath: string, newEnvPath: string) => {
     <SettingsModal 
       :isOpen="isSettingsOpen"
       :rootPath="rootPath"
-      :envPath="envPath"
       @close="isSettingsOpen = false"
       @save="handleSaveSettings"
     />

@@ -36,7 +36,6 @@ interface CosConfig {
 const props = defineProps<{
   content: string;
   filePath: string | null;
-  envPath: string;
 }>();
 
 const emit = defineEmits<{
@@ -83,72 +82,40 @@ const stringifyContent = (body: string) => {
   }
 };
 
+// Removed props.envPath check
 onMounted(() => {
-  if (props.envPath) {
-    invoke<CosConfig>('get_cos_config', { envPath: props.envPath })
-      .then(config => cosConfig.value = config)
-      .catch(console.error);
-  }
+  // No longer loading config from envPath here
 });
 
 const uploadImage = async (file: File): Promise<string> => {
-  if (!cosConfig.value) throw new Error("COS Config not loaded");
-
-  const cos = new COS({
-    SecretId: cosConfig.value.secret_id,
-    SecretKey: cosConfig.value.secret_key,
-  });
-
-  const calculateMD5 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      const spark = new SparkMD5.ArrayBuffer();
-
-      reader.onload = (e) => {
-        if (e.target?.result) {
-          spark.append(e.target.result as ArrayBuffer);
-          resolve(spark.end());
-        } else {
-          reject("Failed to read file");
-        }
-      };
-
-      reader.onerror = (e) => reject(e);
-      reader.readAsArrayBuffer(file);
-    });
-  };
-
-  const hash = await calculateMD5(file);
-  const ext = file.name.split('.').pop() || 'png';
-  const key = `${cosConfig.value.prefix}images/${hash}.${ext}`;
-
+  // Using new Rust command instead of JS SDK
   return new Promise((resolve, reject) => {
-    cos.headObject({
-      Bucket: cosConfig.value!.bucket,
-      Region: cosConfig.value!.region,
-      Key: key
-    }, (_err: any, data: any) => {
-      if (data) {
-        const url = `https://cdn.if9.cool/${key}`;
-        console.log("File already exists, skipping upload:", url);
-        resolve(url);
-        return;
-      }
-
-      cos.putObject({
-        Bucket: cosConfig.value!.bucket,
-        Region: cosConfig.value!.region,
-        Key: key,
-        Body: file,
-      }, (err: any, _data: any) => {
-        if (err) {
-          console.error("COS Upload Error:", err);
-          return reject(err);
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      if (e.target?.result) {
+        try {
+          // Convert ArrayBuffer to number array for Rust
+          const arrayBuffer = e.target.result as ArrayBuffer;
+          const bytes = Array.from(new Uint8Array(arrayBuffer));
+          
+          // Get extension
+          const ext = file.name.split('.').pop() || 'png';
+          
+          // Call Rust command
+          const url = await invoke<string>('upload_image', {
+            fileData: bytes,
+            extension: ext
+          });
+          resolve(url);
+        } catch (err) {
+          reject(err);
         }
-        const url = `https://cdn.if9.cool/${key}`;
-        resolve(url);
-      });
-    });
+      } else {
+        reject("Failed to read file");
+      }
+    };
+    reader.onerror = (e) => reject(e);
+    reader.readAsArrayBuffer(file);
   });
 };
 
