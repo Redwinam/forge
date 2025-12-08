@@ -10,7 +10,7 @@ import { invoke } from '@tauri-apps/api/core';
 import COS from 'cos-js-sdk-v5';
 import SparkMD5 from 'spark-md5';
 import { Bold, Italic, Strikethrough, Code, List, ListOrdered, Quote, Undo, Redo, Image as ImageIcon, Eye, EyeOff } from 'lucide-vue-next';
-import matter from 'gray-matter';
+import yaml from 'js-yaml';
 
 interface CosConfig {
   secret_id: string;
@@ -37,18 +37,41 @@ const showMetadata = ref(true);
 
 // Parse frontmatter
 const parseContent = (fullContent: string) => {
-  try {
-    const parsed = matter(fullContent);
-    metadata.value = parsed.data;
-    return parsed.content;
-  } catch (e) {
-    console.error("Failed to parse frontmatter", e);
-    return fullContent;
+  const frontmatterRegex = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
+  const match = fullContent.match(frontmatterRegex);
+
+  if (match) {
+    try {
+      const yamlContent = match[1];
+      const bodyContent = match[2];
+      const parsedData = yaml.load(yamlContent || '') as Record<string, any>;
+      
+      metadata.value = parsedData || {};
+      return bodyContent || '';
+    } catch (e) {
+      console.error("Failed to parse YAML", e);
+      metadata.value = {};
+      return fullContent;
+    }
   }
+
+  // Handle case where file starts with --- but maybe just header?
+  // Gray-matter is more robust but let's stick to simple YAML block at start.
+  // If no match, check if it looks like frontmatter but failed regex (e.g. spaces)
+  
+  metadata.value = {};
+  return fullContent;
 };
 
 const stringifyContent = (body: string) => {
-  return matter.stringify(body, metadata.value);
+  if (Object.keys(metadata.value).length === 0) return body;
+  try {
+    const yamlString = yaml.dump(metadata.value);
+    return `---\n${yamlString}---\n${body}`;
+  } catch (e) {
+    console.error("Failed to stringify YAML", e);
+    return body;
+  }
 };
 
 onMounted(() => {
@@ -95,7 +118,7 @@ const uploadImage = async (file: File): Promise<string> => {
       Bucket: cosConfig.value!.bucket,
       Region: cosConfig.value!.region,
       Key: key
-    }, (_err, data) => {
+    }, (_err: any, data: any) => {
       if (data) {
         const url = `https://cdn.if9.cool/${key}`;
         console.log("File already exists, skipping upload:", url);
@@ -108,7 +131,7 @@ const uploadImage = async (file: File): Promise<string> => {
         Region: cosConfig.value!.region,
         Key: key,
         Body: file,
-      }, (err, _data) => {
+      }, (err: any, _data: any) => {
         if (err) {
           console.error("COS Upload Error:", err);
           return reject(err);
@@ -189,7 +212,7 @@ watch(() => props.content, (newContent) => {
   // Or simpler: just parse and set content if editor content differs.
   const newBody = parseContent(newContent);
   if (editor.value && newBody !== (editor.value.storage as any).markdown.getMarkdown()) {
-    editor.value.commands.setContent(newBody);
+    editor.value.commands.setContent(newBody || '');
   }
 });
 
@@ -284,17 +307,29 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- Metadata Panel -->
-    <div v-if="showMetadata && Object.keys(metadata).length > 0" class="bg-gray-50 border-b border-gray-200 px-8 py-4">
-      <div class="grid grid-cols-1 gap-4 max-w-3xl">
-        <div v-for="(value, key) in metadata" :key="key" class="flex flex-col">
-          <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">{{ key }}</label>
-          <input 
-            v-if="typeof value === 'string' || typeof value === 'number'"
-            v-model="metadata[key]" 
-            class="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm"
-          />
-          <div v-else class="text-sm text-gray-500 italic">
-            Complex value (editing not supported yet)
+    <div v-if="showMetadata && Object.keys(metadata).length > 0" class="bg-white border-b border-gray-100 shadow-sm transition-all duration-300 ease-in-out">
+      <div class="px-8 py-6">
+        <div class="flex items-center gap-2 mb-4 text-gray-400">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          <span class="text-xs font-medium uppercase tracking-widest">Frontmatter</span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+          <div v-for="(value, key) in metadata" :key="key" class="group">
+            <label class="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 transition-colors group-focus-within:text-blue-500">{{ key }}</label>
+            <div class="relative">
+              <input 
+                v-if="typeof value === 'string' || typeof value === 'number'"
+                v-model="metadata[key]" 
+                class="w-full bg-gray-50 text-gray-800 text-sm font-medium px-3 py-2.5 rounded-lg border border-transparent transition-all duration-200 hover:bg-gray-100 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none placeholder-gray-400"
+                :placeholder="`Enter ${key}...`"
+              />
+              <div v-else class="text-sm text-gray-500 italic bg-gray-50 px-3 py-2.5 rounded-lg border border-gray-100">
+                <span class="inline-flex items-center gap-1.5">
+                  <span class="w-2 h-2 rounded-full bg-yellow-400"></span>
+                  Complex value (JSON)
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
