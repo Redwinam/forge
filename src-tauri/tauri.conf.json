@@ -1,9 +1,9 @@
 {
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm run dev --prefix src-ui",
+    "beforeBuildCommand": "npm run build --prefix src-ui",
     "devPath": "http://localhost:5173",
-    "distDir": "../dist",
+    "distDir": "../src-ui/dist",
     "withGlobalTauri": false
   },
   "package": {

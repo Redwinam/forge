@@ -26,7 +26,7 @@ interface CosConfig {
   prefix: string;
 }
 
-export const Editor: React.FC<EditorProps> = ({ content, filePath, onSave, className, envPath }) => {
+export const Editor: React.FC<EditorProps> = ({ content, onSave, className, envPath }) => {
   const [cosConfig, setCosConfig] = useState<CosConfig | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -76,7 +76,7 @@ export const Editor: React.FC<EditorProps> = ({ content, filePath, onSave, class
         Bucket: cosConfig.bucket,
         Region: cosConfig.region,
         Key: key
-      }, (err, data) => {
+      }, (_err, data) => {
         if (data) {
            const url = `https://cdn.if9.cool/${key}`;
            console.log("File already exists, skipping upload:", url);
@@ -90,7 +90,7 @@ export const Editor: React.FC<EditorProps> = ({ content, filePath, onSave, class
           Region: cosConfig.region,
           Key: key,
           Body: file,
-        }, (err, data) => {
+        }, (err, _data) => {
           if (err) {
             console.error("COS Upload Error:", err);
             return reject(err);
@@ -115,12 +115,12 @@ export const Editor: React.FC<EditorProps> = ({ content, filePath, onSave, class
       }),
     ],
     content: content,
-    onUpdate: ({ editor }) => {
+    onUpdate: () => {
       // Auto-save or just track changes? 
       // We rely on Ctrl+S for saving to disk, but here we can update local state if needed.
     },
     editorProps: {
-      handlePaste: (view, event) => {
+      handlePaste: (_view, event) => {
         const items = Array.from(event.clipboardData?.items || []);
         const item = items.find(item => item.type.indexOf('image') === 0);
         if (item) {
@@ -139,7 +139,7 @@ export const Editor: React.FC<EditorProps> = ({ content, filePath, onSave, class
         }
         return false;
       },
-      handleDrop: (view, event, slice, moved) => {
+      handleDrop: (_view, event, _slice, moved) => {
         if (!moved && event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files.length > 0) {
           const files = Array.from(event.dataTransfer.files);
           const image = files.find(file => file.type.indexOf('image') === 0);

@@ -25,20 +25,16 @@ const FileTreeItem: React.FC<{
 }> = ({ entry, depth, onSelect, currentFile }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [children, setChildren] = useState<FileEntry[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
 
   const toggleOpen = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (entry.is_dir) {
       if (!isOpen && children.length === 0) {
-        setIsLoading(true);
         try {
           const files = await invoke<FileEntry[]>('list_files', { path: entry.path });
           setChildren(files);
         } catch (e) {
           console.error(e);
-        } finally {
-          setIsLoading(false);
         }
       }
       setIsOpen(!isOpen);
@@ -107,7 +103,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ rootPath, onFileSelect, curren
     }
   }, [rootPath]);
 
-  const startResizing = (mouseDownEvent: React.MouseEvent) => {
+  const startResizing = () => {
     setIsResizing(true);
   };
 
