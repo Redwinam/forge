@@ -41,11 +41,22 @@ const parseContent = (fullContent: string) => {
   if (match) {
     try {
       const yamlContent = match[1];
-      const bodyContent = match[2];
+      let bodyContent = match[2] || '';
       const parsedData = yaml.load(yamlContent || '') as Record<string, any>;
       
       metadata.value = parsedData || {};
-      return bodyContent || '';
+      
+      // Fix for escaped headings or horizontal rules after images
+      // Tiptap's markdown parser requires block elements to be separated by blank lines.
+      // If an image is immediately followed by a heading (#) or horizontal rule (---) or any other text,
+      // it gets parsed incorrectly or escaped.
+      // We aggressively ensure double newlines after images if they are followed by ANY content.
+      bodyContent = bodyContent.replace(/(!\[.*?\]\(.*?\))([^\s\r\n])/g, '$1\n\n$2');
+      
+      // Also handle cases where there might be single newlines or spaces but not enough to form a block
+      bodyContent = bodyContent.replace(/(!\[.*?\]\(.*?\))[\s\r\n]+([^\s\r\n])/g, '$1\n\n$2');
+      
+      return bodyContent;
     } catch (e) {
       console.error("Failed to parse YAML", e);
       metadata.value = {};
@@ -58,13 +69,17 @@ const parseContent = (fullContent: string) => {
 };
 
 const stringifyContent = (body: string) => {
-  if (Object.keys(metadata.value).length === 0) return body;
+  // Ensure images are always followed by a blank line in the saved markdown
+  // This prevents the "compressed to one line" issue when reloading
+  let cleanBody = body.replace(/(!\[.*?\]\(.*?\))([ \t]*)(?=\S)/g, '$1\n\n');
+  
+  if (Object.keys(metadata.value).length === 0) return cleanBody;
   try {
     const yamlString = yaml.dump(metadata.value);
-    return `---\n${yamlString}---\n${body}`;
+    return `---\n${yamlString}---\n${cleanBody}`;
   } catch (e) {
     console.error("Failed to stringify YAML", e);
-    return body;
+    return cleanBody;
   }
 };
 
@@ -108,7 +123,14 @@ const editor = useEditor({
         levels: [1, 2, 3, 4, 5, 6],
       },
     }),
-    Markdown,
+    Markdown.configure({
+      html: false, // Prevent HTML parsing which might confuse the parser
+      tightLists: true, // Render tight lists
+      transformPastedText: true, // Allow pasting markdown
+      transformCopiedText: true, // Allow copying markdown
+      linkify: true, // Auto-link URLs
+      breaks: true, // Convert newlines to hard breaks
+    }),
     Image,
     Link.configure({
       openOnClick: false,
