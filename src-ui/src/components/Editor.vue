@@ -139,9 +139,16 @@ const editor = useEditor({
     TextAlign.configure({
       types: ['heading', 'paragraph'],
     }),
-    TaskList,
+    TaskList.configure({
+      HTMLAttributes: {
+        class: 'not-prose pl-2',
+      },
+    }),
     TaskItem.configure({
       nested: true,
+      HTMLAttributes: {
+        class: 'flex gap-2 items-start my-4',
+      },
     }),
     Table.configure({
       resizable: true,
@@ -509,18 +516,44 @@ ul[data-type="taskList"] {
 
 li[data-type="taskItem"] {
   display: flex;
-  gap: 0.5rem;
+  flex-direction: row;
   align-items: flex-start;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.25rem;
+  gap: 0.5rem;
+}
+
+li[data-type="taskItem"] label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.25rem;
+  flex-shrink: 0;
+  user-select: none;
+  margin-right: 0.5rem;
 }
 
 li[data-type="taskItem"] input[type="checkbox"] {
-  margin-top: 0.3rem;
   cursor: pointer;
+  margin: 0;
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: #2563eb;
+  border-radius: 0.25rem;
+  border: 1px solid #d1d5db;
 }
 
 li[data-type="taskItem"] > div {
   flex: 1;
+  min-width: 0;
+}
+
+/* Remove margins from the paragraph inside the task item to align with checkbox */
+li[data-type="taskItem"] > div > p {
+  margin-top: 0;
+  margin-bottom: 0;
+  line-height: 1.75rem;
 }
 
 /* Blockquote */
