@@ -131,7 +131,7 @@ fn upload_image(app: tauri::AppHandle, file_data: Vec<u8>, extension: String) ->
     let bucket = store.get("cos_bucket").and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
     let region = store.get("cos_region").and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
     let prefix = store.get("cos_prefix").and_then(|v| v.as_str().map(String::from)).unwrap_or("press/".to_string());
-    let cdn_domain = store.get("cos_cdn_domain").and_then(|v| v.as_str().map(String::from)).unwrap_or("cdn.if9.cool".to_string());
+    let cdn_domain = store.get("cos_cdn_domain").and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
 
     if secret_id.is_empty() || secret_key.is_empty() || bucket.is_empty() || region.is_empty() {
         return Err("COS configuration is missing. Please check settings.".to_string());
@@ -167,7 +167,11 @@ fn upload_image(app: tauri::AppHandle, file_data: Vec<u8>, extension: String) ->
     if let Ok(res) = head_res {
         if res.status().is_success() {
             // File exists
-            return Ok(format!("https://{}/{}", cdn_domain, key));
+            if cdn_domain.is_empty() {
+                return Ok(format!("https://{}/{}", host, key));
+            } else {
+                return Ok(format!("https://{}/{}", cdn_domain, key));
+            }
         }
     }
 
@@ -185,7 +189,11 @@ fn upload_image(app: tauri::AppHandle, file_data: Vec<u8>, extension: String) ->
         .map_err(|e| e.to_string())?;
 
     if res.status().is_success() {
-        Ok(format!("https://{}/{}", cdn_domain, key))
+        if cdn_domain.is_empty() {
+            Ok(format!("https://{}/{}", host, key))
+        } else {
+            Ok(format!("https://{}/{}", cdn_domain, key))
+        }
     } else {
         Err(format!("Upload failed: {}", res.status()))
     }

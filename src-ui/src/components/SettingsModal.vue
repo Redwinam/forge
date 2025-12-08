@@ -20,7 +20,7 @@ const secretId = ref('');
 const secretKey = ref('');
 const bucket = ref('');
 const region = ref('');
-const cdnDomain = ref('cdn.if9.cool');
+const cdnDomain = ref('');
 const prefix = ref('press/');
 
 watch(() => props.isOpen, async (isOpen) => {
@@ -36,7 +36,7 @@ const loadCosSettings = async () => {
     secretKey.value = await store.get<string>('cos_secret_key') || '';
     bucket.value = await store.get<string>('cos_bucket') || '';
     region.value = await store.get<string>('cos_region') || '';
-    cdnDomain.value = await store.get<string>('cos_cdn_domain') || 'cdn.if9.cool';
+    cdnDomain.value = await store.get<string>('cos_cdn_domain') || '';
     prefix.value = await store.get<string>('cos_prefix') || 'press/';
   } catch (e) {
     console.error("Failed to load COS settings", e);
@@ -120,8 +120,8 @@ onMounted(() => {
             </div>
             <div class="grid grid-cols-2 gap-4">
                <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">CDN Domain</label>
-                <input type="text" v-model="cdnDomain" placeholder="cdn.example.com" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" />
+                <label class="block text-sm font-medium text-gray-700 mb-1">CDN Domain (Optional)</label>
+                <input type="text" v-model="cdnDomain" placeholder="Leave empty to use default COS domain" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" />
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Prefix</label>
