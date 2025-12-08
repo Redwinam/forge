@@ -1,16 +1,40 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import { LazyStore } from '@tauri-apps/plugin-store';
 import Sidebar from './components/Sidebar.vue';
 import Editor from './components/Editor.vue';
 import SettingsModal from './components/SettingsModal.vue';
 
+const store = new LazyStore('.settings.dat');
 const currentPath = ref<string | null>(null);
 const currentContent = ref('');
 const isSettingsOpen = ref(false);
 
 const rootPath = ref(localStorage.getItem('forge_root_path') || '/Users/redwinam/Developer/notes/Press/docs');
 const envPath = ref(localStorage.getItem('forge_env_path') || '/Users/redwinam/Developer/notes/Press/.env');
+
+const loadLastOpenedFile = async () => {
+  try {
+    const lastFile = await store.get<string>('last_opened_file');
+    if (lastFile) {
+      handleFileSelect(lastFile);
+    }
+  } catch (e) {
+    console.error("Failed to load last opened file", e);
+  }
+};
+
+onMounted(() => {
+  loadLastOpenedFile();
+});
+
+watch(currentPath, async (newPath) => {
+  if (newPath) {
+    await store.set('last_opened_file', newPath);
+    await store.save();
+  }
+});
 
 const handleFileSelect = async (path: string) => {
   try {

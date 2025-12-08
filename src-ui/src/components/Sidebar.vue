@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import { LazyStore } from '@tauri-apps/plugin-store';
 import { Settings, ChevronLeft, Menu } from 'lucide-vue-next';
 import FileTreeItem from './FileTreeItem.vue';
 
@@ -21,6 +22,7 @@ const emit = defineEmits<{
   (e: 'open-settings'): void;
 }>();
 
+const store = new LazyStore('.settings.dat');
 const rootFiles = ref<FileEntry[]>([]);
 const width = ref(260);
 const isResizing = ref(false);
@@ -39,8 +41,12 @@ const startResizing = () => {
   isResizing.value = true;
 };
 
-const stopResizing = () => {
-  isResizing.value = false;
+const stopResizing = async () => {
+  if (isResizing.value) {
+    isResizing.value = false;
+    await store.set('sidebar_width', width.value);
+    await store.save();
+  }
 };
 
 const resize = (e: MouseEvent) => {
@@ -52,10 +58,18 @@ const resize = (e: MouseEvent) => {
   }
 };
 
-onMounted(() => {
+onMounted(async () => {
   window.addEventListener('mousemove', resize);
   window.addEventListener('mouseup', stopResizing);
-  console.log("Sidebar mounted", sidebarRef.value);
+  
+  try {
+    const savedWidth = await store.get<number>('sidebar_width');
+    if (savedWidth) {
+      width.value = savedWidth;
+    }
+  } catch (e) {
+    console.error("Failed to load sidebar width", e);
+  }
 });
 
 onUnmounted(() => {
