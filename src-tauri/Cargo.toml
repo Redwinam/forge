@@ -1,0 +1,28 @@
+[package]
+name = "Forge"
+version = "0.1.0"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "1", features = [] }
+
+[dependencies]
+tauri = { version = "1", features = ["shell-open", "fs-all", "dialog-all"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.11", features = ["json", "multipart", "blocking"] }
+tokio = { version = "1", features = ["full"] }
+anyhow = "1.0"
+walkdir = "2" # For recursive directory listing
+base64 = "0.21"
+hmac = "0.12"
+sha1 = "0.10"
+hex = "0.4"
+chrono = "0.4"
+urlencoding = "2"
+dotenv = "0.15"
+
+[features]
+# by default Tauri runs in production mode
+# when `tauri dev` runs it is executed with `custom-protocol` feature
+custom-protocol = ["tauri/custom-protocol"]
