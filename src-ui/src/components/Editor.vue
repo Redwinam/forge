@@ -15,23 +15,10 @@ import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { TableRow } from '@tiptap/extension-table-row';
 import { invoke } from '@tauri-apps/api/core';
-import COS from 'cos-js-sdk-v5';
-import SparkMD5 from 'spark-md5';
-import { 
-  Bold, Italic, Strikethrough, Code, List, ListOrdered, Quote, Undo, Redo, 
-  Image as ImageIcon, Eye, EyeOff, Heading1, Heading2, Heading3, 
-  Underline as UnderlineIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify, Link as LinkIcon,
-  CheckSquare, Table as TableIcon
-} from 'lucide-vue-next';
 import yaml from 'js-yaml';
 
-interface CosConfig {
-  secret_id: string;
-  secret_key: string;
-  bucket: string;
-  region: string;
-  prefix: string;
-}
+import EditorToolbar from './editor/EditorToolbar.vue';
+import MetadataPanel from './editor/MetadataPanel.vue';
 
 const props = defineProps<{
   content: string;
@@ -42,7 +29,6 @@ const emit = defineEmits<{
   (e: 'save', content: string): void;
 }>();
 
-const cosConfig = ref<CosConfig | null>(null);
 const isUploading = ref(false);
 const metadata = ref<Record<string, any>>({});
 const showMetadata = ref(true);
@@ -81,11 +67,6 @@ const stringifyContent = (body: string) => {
     return body;
   }
 };
-
-// Removed props.envPath check
-onMounted(() => {
-  // No longer loading config from envPath here
-});
 
 const uploadImage = async (file: File): Promise<string> => {
   // Using new Rust command instead of JS SDK
@@ -147,7 +128,7 @@ const editor = useEditor({
     TaskItem.configure({
       nested: true,
       HTMLAttributes: {
-        class: 'flex gap-2 items-start my-4',
+        class: 'task-list-item', // Use a dedicated class for styling
       },
     }),
     Table.configure({
@@ -277,128 +258,19 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex flex-col h-full relative bg-white">
-    <!-- Toolbar -->
-    <div v-if="editor" class="flex items-center gap-1 p-2 border-b border-gray-200 bg-white sticky top-0 z-10 overflow-x-auto shadow-sm">
-      <!-- History -->
-      <div class="flex items-center gap-1 pr-2 border-r border-gray-200">
-        <button @click="editor.chain().focus().undo().run()" :disabled="!editor.can().undo()" class="p-1.5 rounded hover:bg-gray-100 disabled:opacity-50 text-gray-600" title="Undo">
-          <Undo :size="18" />
-        </button>
-        <button @click="editor.chain().focus().redo().run()" :disabled="!editor.can().redo()" class="p-1.5 rounded hover:bg-gray-100 disabled:opacity-50 text-gray-600" title="Redo">
-          <Redo :size="18" />
-        </button>
-      </div>
+    <EditorToolbar 
+      :editor="editor" 
+      :show-metadata="showMetadata"
+      @toggle-metadata="showMetadata = !showMetadata"
+      @upload-image="handleImageUploadClick"
+      @set-link="setLink"
+      @insert-table="insertTable"
+    />
 
-      <!-- Headings -->
-      <div class="flex items-center gap-1 px-2 border-r border-gray-200">
-        <button @click="editor.chain().focus().toggleHeading({ level: 1 }).run()" :class="{ 'bg-blue-100 text-blue-600': editor.isActive('heading', { level: 1 }) }" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Heading 1">
-          <Heading1 :size="18" />
-        </button>
-        <button @click="editor.chain().focus().toggleHeading({ level: 2 }).run()" :class="{ 'bg-blue-100 text-blue-600': editor.isActive('heading', { level: 2 }) }" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Heading 2">
-          <Heading2 :size="18" />
-        </button>
-        <button @click="editor.chain().focus().toggleHeading({ level: 3 }).run()" :class="{ 'bg-blue-100 text-blue-600': editor.isActive('heading', { level: 3 }) }" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Heading 3">
-          <Heading3 :size="18" />
-        </button>
-      </div>
-
-      <!-- Formatting -->
-      <div class="flex items-center gap-1 px-2 border-r border-gray-200">
-        <button @click="editor.chain().focus().toggleBold().run()" :class="{ 'bg-blue-100 text-blue-600': editor.isActive('bold') }" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Bold">
-          <Bold :size="18" />
-        </button>
-        <button @click="editor.chain().focus().toggleItalic().run()" :class="{ 'bg-blue-100 text-blue-600': editor.isActive('italic') }" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Italic">
-          <Italic :size="18" />
-        </button>
-        <button @click="editor.chain().focus().toggleUnderline().run()" :class="{ 'bg-blue-100 text-blue-600': editor.isActive('underline') }" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Underline">
-          <UnderlineIcon :size="18" />
-        </button>
-        <button @click="editor.chain().focus().toggleStrike().run()" :class="{ 'bg-blue-100 text-blue-600': editor.isActive('strike') }" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Strikethrough">
-          <Strikethrough :size="18" />
-        </button>
-        <button @click="editor.chain().focus().toggleCode().run()" :class="{ 'bg-blue-100 text-blue-600': editor.isActive('code') }" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Code">
-          <Code :size="18" />
-        </button>
-      </div>
-
-      <!-- Alignment -->
-      <div class="flex items-center gap-1 px-2 border-r border-gray-200">
-        <button @click="editor.chain().focus().setTextAlign('left').run()" :class="{ 'bg-blue-100 text-blue-600': editor.isActive({ textAlign: 'left' }) }" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Align Left">
-          <AlignLeft :size="18" />
-        </button>
-        <button @click="editor.chain().focus().setTextAlign('center').run()" :class="{ 'bg-blue-100 text-blue-600': editor.isActive({ textAlign: 'center' }) }" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Align Center">
-          <AlignCenter :size="18" />
-        </button>
-        <button @click="editor.chain().focus().setTextAlign('right').run()" :class="{ 'bg-blue-100 text-blue-600': editor.isActive({ textAlign: 'right' }) }" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Align Right">
-          <AlignRight :size="18" />
-        </button>
-      </div>
-
-      <!-- Lists -->
-      <div class="flex items-center gap-1 px-2 border-r border-gray-200">
-        <button @click="editor.chain().focus().toggleBulletList().run()" :class="{ 'bg-blue-100 text-blue-600': editor.isActive('bulletList') }" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Bullet List">
-          <List :size="18" />
-        </button>
-        <button @click="editor.chain().focus().toggleOrderedList().run()" :class="{ 'bg-blue-100 text-blue-600': editor.isActive('orderedList') }" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Ordered List">
-          <ListOrdered :size="18" />
-        </button>
-        <button @click="editor.chain().focus().toggleTaskList().run()" :class="{ 'bg-blue-100 text-blue-600': editor.isActive('taskList') }" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Task List">
-          <CheckSquare :size="18" />
-        </button>
-        <button @click="editor.chain().focus().toggleBlockquote().run()" :class="{ 'bg-blue-100 text-blue-600': editor.isActive('blockquote') }" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Quote">
-          <Quote :size="18" />
-        </button>
-      </div>
-
-      <!-- Insert -->
-      <div class="flex items-center gap-1 px-2">
-        <button @click="insertTable" :class="{ 'bg-blue-100 text-blue-600': editor.isActive('table') }" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Insert Table">
-          <TableIcon :size="18" />
-        </button>
-        <button @click="setLink" :class="{ 'bg-blue-100 text-blue-600': editor.isActive('link') }" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Link">
-          <LinkIcon :size="18" />
-        </button>
-        <button @click="handleImageUploadClick" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Upload Image">
-          <ImageIcon :size="18" />
-        </button>
-      </div>
-      
-      <div class="flex-1"></div>
-      
-      <button @click="showMetadata = !showMetadata" class="p-1.5 rounded hover:bg-gray-100 mr-2 text-gray-600" :title="showMetadata ? 'Hide Metadata' : 'Show Metadata'">
-        <Eye v-if="showMetadata" :size="18" />
-        <EyeOff v-else :size="18" />
-      </button>
-    </div>
-
-    <!-- Metadata Panel -->
-    <div v-if="showMetadata && Object.keys(metadata).length > 0" class="bg-gray-50 border-b border-gray-200 transition-all duration-300 ease-in-out">
-      <div class="px-8 py-4">
-        <div class="flex items-center gap-2 mb-3 text-gray-400">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-          <span class="text-[10px] font-bold uppercase tracking-widest">Frontmatter</span>
-        </div>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-          <div v-for="(value, key) in metadata" :key="key" class="group">
-            <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">{{ key }}</label>
-            <div class="relative">
-              <input 
-                v-if="typeof value === 'string' || typeof value === 'number'"
-                v-model="metadata[key]" 
-                class="w-full bg-white text-gray-800 text-xs font-medium px-3 py-2 rounded border border-gray-200 transition-all duration-200 hover:border-blue-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
-                :placeholder="`Enter ${key}...`"
-              />
-              <div v-else class="text-xs text-gray-500 italic bg-gray-100 px-3 py-2 rounded border border-gray-200">
-                <span class="inline-flex items-center gap-1.5">
-                  <span class="w-1.5 h-1.5 rounded-full bg-yellow-400"></span>
-                  Complex value
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <MetadataPanel 
+      :metadata="metadata" 
+      :show="showMetadata"
+    />
 
     <div v-if="isUploading" class="absolute top-14 right-4 z-20 bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm shadow-md animate-pulse">
       Uploading image...
@@ -507,50 +379,82 @@ onBeforeUnmount(() => {
   font-weight: normal;
 }
 
-/* Task Lists */
+/* 
+   TASK LIST STYLING 
+   This aims to be a robust, pixel-perfect alignment.
+*/
+
 ul[data-type="taskList"] {
   list-style: none;
   padding: 0;
   margin: 0;
 }
 
-li[data-type="taskItem"] {
+/* The item container */
+li.task-list-item {
   display: flex;
   flex-direction: row;
-  align-items: flex-start;
-  margin-bottom: 0.25rem;
-  gap: 0.5rem;
+  align-items: flex-start; /* Aligns checkbox with the top of the content */
+  margin-bottom: 0.2rem;
 }
 
-li[data-type="taskItem"] label {
+/* The checkbox label container */
+li.task-list-item > label {
+  flex: 0 0 auto; /* Don't shrink or grow */
+  margin-right: 0.5rem;
+  user-select: none;
+  /* Fixed height equal to line-height to center checkbox vertically */
+  height: 1.75rem; 
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 1.25rem;
-  height: 1.25rem;
-  margin-top: 0.25rem;
-  flex-shrink: 0;
-  user-select: none;
-  margin-right: 0.5rem;
 }
 
-li[data-type="taskItem"] input[type="checkbox"] {
-  cursor: pointer;
+/* The actual checkbox input */
+li.task-list-item input[type="checkbox"] {
+  /* Reset appearance */
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: #fff;
   margin: 0;
+  cursor: pointer;
   width: 1.1rem;
   height: 1.1rem;
-  accent-color: #2563eb;
-  border-radius: 0.25rem;
-  border: 1px solid #d1d5db;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 0.3rem;
+  display: grid;
+  place-content: center;
+  transition: all 0.1s ease-in-out;
 }
 
-li[data-type="taskItem"] > div {
-  flex: 1;
-  min-width: 0;
+li.task-list-item input[type="checkbox"]::before {
+  content: "";
+  width: 0.65rem;
+  height: 0.65rem;
+  transform: scale(0);
+  transition: 120ms transform ease-in-out;
+  box-shadow: inset 1em 1em white;
+  transform-origin: center;
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
 }
 
-/* Remove margins from the paragraph inside the task item to align with checkbox */
-li[data-type="taskItem"] > div > p {
+li.task-list-item input[type="checkbox"]:checked {
+  background-color: #3b82f6; /* Blue-500 */
+  border-color: #3b82f6;
+}
+
+li.task-list-item input[type="checkbox"]:checked::before {
+  transform: scale(1);
+}
+
+/* The content container */
+li.task-list-item > div {
+  flex: 1 1 auto;
+  min-width: 0; /* Prevents overflow */
+}
+
+/* Ensure paragraphs inside don't have margins that break alignment */
+li.task-list-item > div > p {
   margin-top: 0;
   margin-bottom: 0;
   line-height: 1.75rem;
