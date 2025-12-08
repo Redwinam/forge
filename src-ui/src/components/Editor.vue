@@ -10,6 +10,10 @@ import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
+import { Table } from '@tiptap/extension-table';
+import { TableCell } from '@tiptap/extension-table-cell';
+import { TableHeader } from '@tiptap/extension-table-header';
+import { TableRow } from '@tiptap/extension-table-row';
 import { invoke } from '@tauri-apps/api/core';
 import COS from 'cos-js-sdk-v5';
 import SparkMD5 from 'spark-md5';
@@ -17,7 +21,7 @@ import {
   Bold, Italic, Strikethrough, Code, List, ListOrdered, Quote, Undo, Redo, 
   Image as ImageIcon, Eye, EyeOff, Heading1, Heading2, Heading3, 
   Underline as UnderlineIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify, Link as LinkIcon,
-  CheckSquare
+  CheckSquare, Table as TableIcon
 } from 'lucide-vue-next';
 import yaml from 'js-yaml';
 
@@ -172,6 +176,12 @@ const editor = useEditor({
     TaskItem.configure({
       nested: true,
     }),
+    Table.configure({
+      resizable: true,
+    }),
+    TableRow,
+    TableHeader,
+    TableCell,
   ],
   editorProps: {
     attributes: {
@@ -243,6 +253,10 @@ const setLink = () => {
 
   // update
   editor.value.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+};
+
+const insertTable = () => {
+  editor.value?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
 };
 
 const handleImageUploadClick = () => {
@@ -364,6 +378,9 @@ onBeforeUnmount(() => {
 
       <!-- Insert -->
       <div class="flex items-center gap-1 px-2">
+        <button @click="insertTable" :class="{ 'bg-blue-100 text-blue-600': editor.isActive('table') }" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Insert Table">
+          <TableIcon :size="18" />
+        </button>
         <button @click="setLink" :class="{ 'bg-blue-100 text-blue-600': editor.isActive('link') }" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Link">
           <LinkIcon :size="18" />
         </button>
@@ -571,5 +588,49 @@ li[data-type="taskItem"] > div {
 .ProseMirror ul,
 .ProseMirror ol {
   padding-left: 1.5rem;
+}
+
+/* Tables */
+.ProseMirror table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+.ProseMirror td,
+.ProseMirror th {
+  min-width: 1em;
+  border: 1px solid #ced4da;
+  padding: 0.5rem;
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.ProseMirror th {
+  font-weight: 600;
+  text-align: left;
+  background-color: #f8f9fa;
+}
+
+.ProseMirror .selectedCell:after {
+  z-index: 2;
+  position: absolute;
+  content: "";
+  left: 0; right: 0; top: 0; bottom: 0;
+  background: rgba(200, 200, 255, 0.4);
+  pointer-events: none;
+}
+
+.ProseMirror .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: -2px;
+  width: 4px;
+  background-color: #adf;
+  pointer-events: none;
 }
 </style>
