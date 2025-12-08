@@ -5,7 +5,7 @@ import { Markdown } from 'tiptap-markdown';
 import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 import COS from 'cos-js-sdk-v5';
 import SparkMD5 from 'spark-md5';
 import { Toolbar } from './Toolbar';
@@ -162,7 +162,7 @@ export const Editor: React.FC<EditorProps> = ({ content, onSave, className, envP
 
   // Update content when file changes
   useEffect(() => {
-    if (editor && content !== editor.storage.markdown.getMarkdown()) {
+    if (editor && content !== (editor.storage as any).markdown.getMarkdown()) {
       editor.commands.setContent(content);
     }
   }, [content, editor]);
@@ -173,7 +173,7 @@ export const Editor: React.FC<EditorProps> = ({ content, onSave, className, envP
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
         if (editor) {
-          const markdown = editor.storage.markdown.getMarkdown();
+          const markdown = (editor.storage as any).markdown.getMarkdown();
           onSave(markdown);
         }
       }

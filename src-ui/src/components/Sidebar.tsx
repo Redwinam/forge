@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Folder, File, ChevronRight, ChevronDown, Settings, ChevronLeft, Menu } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 import clsx from 'clsx';
 
 interface FileEntry {

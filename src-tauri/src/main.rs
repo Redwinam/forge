@@ -96,6 +96,9 @@ fn get_cos_config(env_path: String) -> Result<CosConfig, String> {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![list_files, read_file, write_file, get_cos_config])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
