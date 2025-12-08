@@ -1,17 +1,15 @@
 {
-  "name": "forge",
+  "name": "src-ui",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview",
-    "tauri": "tauri"
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
-    "@tailwindcss/postcss": "^4.1.17",
-    "@tailwindcss/typography": "^0.5.19",
+    "@tailwindcss/vite": "^4.1.17",
     "@tauri-apps/api": "^2.9.1",
     "@tauri-apps/plugin-dialog": "^2.4.2",
     "@tauri-apps/plugin-fs": "^2.4.4",
@@ -20,28 +18,24 @@
     "@tiptap/extension-link": "^3.13.0",
     "@tiptap/extension-placeholder": "^3.13.0",
     "@tiptap/pm": "^3.13.0",
-    "@tiptap/react": "^3.13.0",
     "@tiptap/starter-kit": "^3.13.0",
-    "clsx": "^2.0.0",
-    "cos-js-sdk-v5": "^1.4.21",
-    "lucide-react": "^0.556.0",
-    "react": "^19.2.1",
-    "react-dom": "^19.2.1",
+    "@tiptap/vue-3": "^3.13.0",
+    "clsx": "^2.1.1",
+    "cos-js-sdk-v5": "^1.10.1",
+    "lucide-vue-next": "^0.556.0",
     "spark-md5": "^3.0.2",
     "tailwind-merge": "^3.4.0",
-    "tiptap-markdown": "^0.9.0"
+    "tailwindcss": "^4.1.17",
+    "tiptap-markdown": "^0.9.0",
+    "vue": "^3.5.24"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.9.5",
     "@types/node": "^24.10.1",
-    "@types/react": "^19.2.7",
-    "@types/react-dom": "^19.2.3",
     "@types/spark-md5": "^3.0.5",
-    "@vitejs/plugin-react": "^5.1.1",
-    "autoprefixer": "^10.4.22",
-    "postcss": "^8.5.6",
-    "tailwindcss": "^4.1.17",
-    "typescript": "^5.2.2",
-    "vite": "^7.2.7"
+    "@vitejs/plugin-vue": "^6.0.1",
+    "@vue/tsconfig": "^0.8.1",
+    "typescript": "~5.9.3",
+    "vite": "^7.2.4",
+    "vue-tsc": "^3.1.4"
   }
 }
