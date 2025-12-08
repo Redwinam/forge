@@ -9,7 +9,7 @@ import Placeholder from '@tiptap/extension-placeholder';
 import { invoke } from '@tauri-apps/api/core';
 import COS from 'cos-js-sdk-v5';
 import SparkMD5 from 'spark-md5';
-import { Bold, Italic, Strikethrough, Code, List, ListOrdered, Quote, Undo, Redo, Image as ImageIcon, Eye, EyeOff } from 'lucide-vue-next';
+import { Bold, Italic, Strikethrough, Code, List, ListOrdered, Quote, Undo, Redo, Image as ImageIcon, Eye, EyeOff, Heading1, Heading2, Heading3 } from 'lucide-vue-next';
 import yaml from 'js-yaml';
 
 interface CosConfig {
@@ -262,6 +262,16 @@ onBeforeUnmount(() => {
   <div class="flex flex-col h-full relative">
     <!-- Toolbar -->
     <div v-if="editor" class="flex items-center gap-1 p-2 border-b border-gray-200 bg-white sticky top-0 z-10 overflow-x-auto">
+      <button @click="editor.chain().focus().toggleHeading({ level: 1 }).run()" :class="{ 'bg-gray-200': editor.isActive('heading', { level: 1 }) }" class="p-1.5 rounded hover:bg-gray-100" title="Heading 1">
+        <Heading1 :size="18" />
+      </button>
+      <button @click="editor.chain().focus().toggleHeading({ level: 2 }).run()" :class="{ 'bg-gray-200': editor.isActive('heading', { level: 2 }) }" class="p-1.5 rounded hover:bg-gray-100" title="Heading 2">
+        <Heading2 :size="18" />
+      </button>
+      <button @click="editor.chain().focus().toggleHeading({ level: 3 }).run()" :class="{ 'bg-gray-200': editor.isActive('heading', { level: 3 }) }" class="p-1.5 rounded hover:bg-gray-100" title="Heading 3">
+        <Heading3 :size="18" />
+      </button>
+      <div class="w-px h-6 bg-gray-200 mx-1"></div>
       <button @click="editor.chain().focus().toggleBold().run()" :class="{ 'bg-gray-200': editor.isActive('bold') }" class="p-1.5 rounded hover:bg-gray-100" title="Bold">
         <Bold :size="18" />
       </button>
