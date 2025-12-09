@@ -10,6 +10,7 @@ const store = new LazyStore('.settings.dat');
 const currentPath = ref<string | null>(null);
 const currentContent = ref('');
 const isSettingsOpen = ref(false);
+const isSaving = ref(false);
 
 const rootPath = ref(localStorage.getItem('forge_root_path') || '/Users/redwinam/Developer/notes/Press/docs');
 
@@ -48,12 +49,16 @@ const handleFileSelect = async (path: string) => {
 
 const handleSave = async (content: string) => {
   if (!currentPath.value) return;
+  isSaving.value = true;
   try {
     await invoke('write_file', { path: currentPath.value, content });
     console.log("Saved!");
+    // Update currentContent to reflect saved state if needed, though Editor handles it
   } catch (e) {
     console.error("Failed to save", e);
     alert("Failed to save: " + e);
+  } finally {
+    isSaving.value = false;
   }
 };
 
@@ -77,6 +82,7 @@ const handleSaveSettings = (newRootPath: string) => {
         :key="currentPath"
         :content="currentContent"
         :filePath="currentPath"
+        :isSaving="isSaving"
         @save="handleSave"
         class="flex-1"
       />

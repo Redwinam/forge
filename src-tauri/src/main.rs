@@ -197,6 +197,83 @@ fn upload_image(app: tauri::AppHandle, file_data: Vec<u8>, extension: String) ->
     }
 }
 
+#[tauri::command]
+fn upload_file(app: tauri::AppHandle, file_data: Vec<u8>, extension: String) -> Result<String, String> {
+    let store = app.store(".settings.dat").map_err(|e| e.to_string())?;
+    
+    let secret_id = store.get("cos_secret_id").and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
+    let secret_key = store.get("cos_secret_key").and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
+    let bucket = store.get("cos_bucket").and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
+    let region = store.get("cos_region").and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
+    let prefix = store.get("cos_prefix").and_then(|v| v.as_str().map(String::from)).unwrap_or("press/".to_string());
+    let cdn_domain = store.get("cos_cdn_domain").and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
+
+    if secret_id.is_empty() || secret_key.is_empty() || bucket.is_empty() || region.is_empty() {
+        return Err("COS configuration is missing. Please check settings.".to_string());
+    }
+
+    // Calculate MD5
+    let digest = md5::compute(&file_data);
+    let hash = format!("{:x}", digest);
+    let key = format!("{}files/{}.{}", prefix, hash, extension);
+    
+    // Check if file exists (HEAD request)
+    let host = format!("{}.cos.{}.myqcloud.com", bucket, region);
+    let uri = format!("/{}", key);
+    let url = format!("https://{}{}", host, uri);
+    
+    let client = Client::new();
+    
+    // HEAD
+    let now = Utc::now();
+    let start_timestamp = now.timestamp();
+    let end_timestamp = start_timestamp + 600;
+    
+    let mut headers = HashMap::new();
+    headers.insert("Host".to_string(), host.clone());
+    
+    let signature = calculate_signature(&secret_id, &secret_key, "HEAD", &uri, &HashMap::new(), &headers, start_timestamp, end_timestamp);
+    
+    let head_res = client.head(&url)
+        .header("Authorization", signature)
+        .header("Host", &host)
+        .send();
+
+    if let Ok(res) = head_res {
+        if res.status().is_success() {
+            // File exists
+            if cdn_domain.is_empty() {
+                return Ok(format!("https://{}/{}", host, key));
+            } else {
+                return Ok(format!("https://{}/{}", cdn_domain, key));
+            }
+        }
+    }
+
+    // PUT
+    let now = Utc::now();
+    let start_timestamp = now.timestamp();
+    let end_timestamp = start_timestamp + 600;
+    let signature = calculate_signature(&secret_id, &secret_key, "PUT", &uri, &HashMap::new(), &headers, start_timestamp, end_timestamp);
+
+    let res = client.put(&url)
+        .header("Authorization", signature)
+        .header("Host", &host)
+        .body(file_data)
+        .send()
+        .map_err(|e| e.to_string())?;
+
+    if res.status().is_success() {
+        if cdn_domain.is_empty() {
+            Ok(format!("https://{}/{}", host, key))
+        } else {
+            Ok(format!("https://{}/{}", cdn_domain, key))
+        }
+    } else {
+        Err(format!("Upload failed: {}", res.status()))
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -204,7 +281,7 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![list_files, read_file, write_file, upload_image])
+        .invoke_handler(tauri::generate_handler![list_files, read_file, write_file, upload_image, upload_file])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

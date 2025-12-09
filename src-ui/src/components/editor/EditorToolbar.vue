@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { 
   Bold, Italic, Strikethrough, Code, List, ListOrdered, Quote, Undo, Redo, 
-  Image as ImageIcon, Eye, EyeOff, Heading1, Heading2, Heading3, 
+  Image as ImageIcon, PanelRight, FileCode, Save, Paperclip, Heading1, Heading2, Heading3, 
   Underline as UnderlineIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify, Link as LinkIcon,
-  CheckSquare, Table as TableIcon
+  CheckSquare, Table as TableIcon, FileText
 } from 'lucide-vue-next';
 import { Editor } from '@tiptap/vue-3';
 
 defineProps<{
   editor: Editor | undefined;
   showMetadata: boolean;
+  saveStatus: string;
+  isRawMode: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -17,13 +19,25 @@ const emit = defineEmits<{
   (e: 'upload-image'): void;
   (e: 'set-link'): void;
   (e: 'insert-table'): void;
+  (e: 'save'): void;
+  (e: 'toggle-mode'): void;
+  (e: 'upload-file'): void;
 }>();
 </script>
 
 <template>
-  <div v-if="editor" class="flex items-center gap-1 p-2 border-b border-gray-200 bg-white sticky top-0 z-10 overflow-x-auto shadow-sm">
-    <!-- History -->
+  <div class="flex items-center gap-1 p-2 border-b border-gray-200 bg-white sticky top-0 z-10 overflow-x-auto shadow-sm">
+    <!-- Save -->
     <div class="flex items-center gap-1 pr-2 border-r border-gray-200">
+      <button @click="$emit('save')" class="p-1.5 rounded hover:bg-gray-100 text-gray-600 relative" title="Save (Ctrl+S)">
+        <Save :size="18" />
+        <span v-if="saveStatus === 'unsaved'" class="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+      </button>
+    </div>
+
+    <template v-if="editor && !isRawMode">
+      <!-- History -->
+      <div class="flex items-center gap-1 px-2 border-r border-gray-200">
       <button @click="editor.chain().focus().undo().run()" :disabled="!editor.can().undo()" class="p-1.5 rounded hover:bg-gray-100 disabled:opacity-50 text-gray-600" title="Undo">
         <Undo :size="18" />
       </button>
@@ -104,13 +118,25 @@ const emit = defineEmits<{
       <button @click="$emit('upload-image')" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Upload Image">
         <ImageIcon :size="18" />
       </button>
+      <button @click="$emit('upload-file')" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Upload Attachment">
+        <Paperclip :size="18" />
+      </button>
+    </div>
+    </template>
+    
+    <div class="flex-1 flex justify-end items-center mr-2">
+       <span class="text-xs text-gray-400 mr-2 select-none">{{ saveStatus === 'saving' ? 'Saving...' : (saveStatus === 'unsaved' ? 'Unsaved' : 'Saved') }}</span>
     </div>
     
-    <div class="flex-1"></div>
-    
-    <button @click="$emit('toggle-metadata')" class="p-1.5 rounded hover:bg-gray-100 mr-2 text-gray-600" :title="showMetadata ? 'Hide Metadata' : 'Show Metadata'">
-      <Eye v-if="showMetadata" :size="18" />
-      <EyeOff v-else :size="18" />
-    </button>
+    <div class="flex items-center gap-1 border-l border-gray-200 pl-2">
+      <button @click="$emit('toggle-mode')" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" :title="isRawMode ? 'Switch to WYSIWYG' : 'Switch to Raw Markdown'">
+        <FileText v-if="isRawMode" :size="18" />
+        <FileCode v-else :size="18" />
+      </button>
+
+      <button @click="$emit('toggle-metadata')" class="p-1.5 rounded hover:bg-gray-100 text-gray-600" :title="showMetadata ? 'Hide Metadata' : 'Show Metadata'">
+        <PanelRight :size="18" :class="{ 'text-blue-600': showMetadata }" />
+      </button>
+    </div>
   </div>
 </template>

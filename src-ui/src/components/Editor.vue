@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch } from 'vue';
+import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue';
 import { useEditor, EditorContent } from '@tiptap/vue-3';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from 'tiptap-markdown';
@@ -24,6 +24,7 @@ import MetadataPanel from './editor/MetadataPanel.vue';
 const props = defineProps<{
   content: string;
   filePath: string | null;
+  isSaving?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -33,6 +34,16 @@ const emit = defineEmits<{
 const isUploading = ref(false);
 const metadata = ref<Record<string, any>>({});
 const showMetadata = ref(true);
+const isRawMode = ref(false);
+const rawContent = ref('');
+const isDirty = ref(false);
+const lastSavedContent = ref('');
+
+const saveStatus = computed(() => {
+  if (props.isSaving) return 'saving';
+  if (isDirty.value) return 'unsaved';
+  return 'saved';
+});
 
 // Parse frontmatter
 const parseContent = (fullContent: string) => {
@@ -70,6 +81,33 @@ const stringifyContent = (body: string) => {
   }
 };
 
+const uploadFile = async (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      if (e.target?.result) {
+        try {
+          const arrayBuffer = e.target.result as ArrayBuffer;
+          const bytes = Array.from(new Uint8Array(arrayBuffer));
+          const ext = file.name.split('.').pop() || 'dat';
+          
+          const url = await invoke<string>('upload_file', {
+            fileData: bytes,
+            extension: ext
+          });
+          resolve(url);
+        } catch (err) {
+          reject(err);
+        }
+      } else {
+        reject("Failed to read file");
+      }
+    };
+    reader.onerror = (e) => reject(e);
+    reader.readAsArrayBuffer(file);
+  });
+};
+
 const uploadImage = async (file: File): Promise<string> => {
   // Using new Rust command instead of JS SDK
   return new Promise((resolve, reject) => {
@@ -104,6 +142,11 @@ const uploadImage = async (file: File): Promise<string> => {
 
 const editor = useEditor({
   content: parseContent(props.content),
+  onUpdate: ({ editor }) => {
+    const markdownBody = (editor.storage as any).markdown.getMarkdown();
+    const fullContent = stringifyContent(markdownBody);
+    isDirty.value = fullContent !== lastSavedContent.value;
+  },
   extensions: [
     StarterKit.configure({
       heading: {
@@ -193,11 +236,15 @@ const editor = useEditor({
 
 // Update content when props change
 watch(() => props.content, (newContent) => {
+  lastSavedContent.value = newContent;
+  isDirty.value = false;
+  rawContent.value = newContent;
+
   const newBody = parseContent(newContent);
   if (editor.value && newBody !== (editor.value.storage as any).markdown.getMarkdown()) {
     editor.value.commands.setContent(newBody || '');
   }
-});
+}, { immediate: true });
 
 const setLink = () => {
   if (!editor.value) return;
@@ -244,14 +291,63 @@ const handleImageUploadClick = () => {
   input.click();
 };
 
+const handleFileUploadClick = () => {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.onchange = async (e) => {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (file) {
+      isUploading.value = true;
+      try {
+        const url = await uploadFile(file);
+        if (editor.value && !isRawMode.value) {
+            editor.value.chain().focus().insertContent(`[${file.name}](${url})`).run();
+        } else if (isRawMode.value) {
+            rawContent.value += `\n[${file.name}](${url})`;
+        }
+      } catch (err) {
+        alert("Upload failed: " + err);
+      } finally {
+        isUploading.value = false;
+      }
+    }
+  };
+  input.click();
+};
+
+const handleSave = () => {
+  if (isRawMode.value) {
+    const fullContent = rawContent.value;
+    emit('save', fullContent);
+    lastSavedContent.value = fullContent;
+    isDirty.value = false;
+  } else if (editor.value) {
+    const markdownBody = (editor.value.storage as any).markdown.getMarkdown();
+    const fullContent = stringifyContent(markdownBody);
+    emit('save', fullContent);
+    lastSavedContent.value = fullContent;
+    isDirty.value = false;
+  }
+};
+
+const toggleMode = () => {
+  if (isRawMode.value) {
+    const newBody = parseContent(rawContent.value);
+    editor.value?.commands.setContent(newBody || '');
+    isRawMode.value = false;
+  } else {
+    if (editor.value) {
+      const markdownBody = (editor.value.storage as any).markdown.getMarkdown();
+      rawContent.value = stringifyContent(markdownBody);
+    }
+    isRawMode.value = true;
+  }
+};
+
 const handleKeyDown = (e: KeyboardEvent) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 's') {
     e.preventDefault();
-    if (editor.value) {
-      const markdownBody = (editor.value.storage as any).markdown.getMarkdown();
-      const fullContent = stringifyContent(markdownBody);
-      emit('save', fullContent);
-    }
+    handleSave();
   }
 };
 
@@ -270,10 +366,15 @@ onBeforeUnmount(() => {
     <EditorToolbar 
       :editor="editor" 
       :show-metadata="showMetadata"
+      :save-status="saveStatus"
+      :is-raw-mode="isRawMode"
       @toggle-metadata="showMetadata = !showMetadata"
       @upload-image="handleImageUploadClick"
       @set-link="setLink"
       @insert-table="insertTable"
+      @save="handleSave"
+      @toggle-mode="toggleMode"
+      @upload-file="handleFileUploadClick"
     />
 
     <MetadataPanel 
@@ -282,10 +383,19 @@ onBeforeUnmount(() => {
     />
 
     <div v-if="isUploading" class="absolute top-14 right-4 z-20 bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm shadow-md animate-pulse">
-      Uploading image...
+      Uploading...
     </div>
 
-    <editor-content :editor="editor" class="flex-1 overflow-y-auto" />
+    <div v-if="isRawMode" class="flex-1 overflow-y-auto bg-gray-50 p-4">
+      <textarea 
+        v-model="rawContent" 
+        class="w-full h-full p-4 font-mono text-sm bg-white border border-gray-200 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        spellcheck="false"
+        @input="isDirty = true"
+      ></textarea>
+    </div>
+
+    <editor-content v-else :editor="editor" class="flex-1 overflow-y-auto" />
   </div>
 </template>
 

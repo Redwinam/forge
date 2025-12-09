@@ -100,7 +100,7 @@ const handleSelect = (path: string) => {
     :style="{ width: `${width}px` }"
   >
     <!-- Header -->
-    <div class="h-10 flex items-center justify-between px-3 border-b border-gray-200 shrink-0">
+    <div class="h-[47px] flex items-center justify-between px-3 border-b border-gray-200 shrink-0">
       <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider truncate" :title="rootPath">
         {{ rootPath ? rootPath.split('/').pop() : 'Files' }}
       </span>
