@@ -11,6 +11,7 @@ const currentPath = ref<string | null>(null);
 const currentContent = ref('');
 const isSettingsOpen = ref(false);
 const isSaving = ref(false);
+const editorRef = ref<any>(null);
 
 const rootPath = ref(localStorage.getItem('forge_root_path') || '/Users/redwinam/Developer/notes/Press/docs');
 
@@ -38,6 +39,19 @@ watch(currentPath, async (newPath) => {
 
 const handleFileSelect = async (path: string) => {
   try {
+    // Auto-save if dirty
+    if (currentPath.value && editorRef.value) {
+      const isDirty = editorRef.value.isDirty;
+      // Handle both ref (needs .value) and unwrapped boolean cases
+      const needsSave = typeof isDirty === 'boolean' ? isDirty : isDirty?.value;
+      
+      if (needsSave) {
+        const full = editorRef.value.getFullContent();
+        await handleSave(full);
+        editorRef.value.setSaved(full);
+      }
+    }
+
     const content = await invoke<string>('read_file', { path });
     currentPath.value = path;
     currentContent.value = content;
@@ -77,15 +91,16 @@ const handleSaveSettings = (newRootPath: string) => {
       @open-settings="isSettingsOpen = true"
     />
     <div class="flex-1 flex flex-col h-full overflow-hidden">
-      <Editor 
-        v-if="currentPath"
-        :key="currentPath"
-        :content="currentContent"
-        :filePath="currentPath"
-        :isSaving="isSaving"
-        @save="handleSave"
-        class="flex-1"
-      />
+  <Editor 
+    v-if="currentPath"
+    :key="currentPath"
+    :content="currentContent"
+    :filePath="currentPath"
+    :isSaving="isSaving"
+    @save="handleSave"
+    ref="editorRef"
+    class="flex-1"
+  />
       <div v-else class="flex items-center justify-center h-full text-gray-400">
         Select a file to edit
       </div>

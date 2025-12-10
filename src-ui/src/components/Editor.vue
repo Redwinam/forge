@@ -359,6 +359,29 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeyDown);
   editor.value?.destroy();
 });
+
+const getFullContent = () => {
+  if (isRawMode.value) {
+    return rawContent.value;
+  }
+  if (editor.value) {
+    const markdownBody = (editor.value.storage as any).markdown.getMarkdown();
+    return stringifyContent(markdownBody);
+  }
+  return rawContent.value;
+};
+
+const setSaved = (content: string) => {
+  lastSavedContent.value = content;
+  isDirty.value = false;
+};
+
+defineExpose({
+  save: handleSave,
+  getFullContent,
+  setSaved,
+  isDirty,
+});
 </script>
 
 <template>
