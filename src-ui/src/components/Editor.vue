@@ -2,12 +2,9 @@
 import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue';
 import { useEditor, EditorContent } from '@tiptap/vue-3';
 import StarterKit from '@tiptap/starter-kit';
-import { Markdown } from 'tiptap-markdown';
-import Image from '@tiptap/extension-image';
+import { Markdown } from '@tiptap/markdown';
 import CustomImage from './editor/image-extension';
-import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
-import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
@@ -142,8 +139,10 @@ const uploadImage = async (file: File): Promise<string> => {
 
 const editor = useEditor({
   content: parseContent(props.content),
+  // @ts-ignore
+  contentType: 'markdown',
   onUpdate: ({ editor }) => {
-    const markdownBody = (editor.storage as any).markdown.getMarkdown();
+    const markdownBody = editor.getMarkdown();
     const fullContent = stringifyContent(markdownBody);
     isDirty.value = fullContent !== lastSavedContent.value;
   },
@@ -152,23 +151,19 @@ const editor = useEditor({
       heading: {
         levels: [1, 2, 3, 4, 5, 6],
       },
+      link: {
+        openOnClick: false,
+      },
     }),
     Markdown.configure({
-      html: false, // Prevent HTML parsing which might confuse the parser
-      tightLists: true, // Render tight lists
-      transformPastedText: true, // Allow pasting markdown
-      transformCopiedText: true, // Allow copying markdown
-      linkify: true, // Auto-link URLs
-      breaks: true, // Convert newlines to hard breaks
+      markedOptions: {
+        breaks: true, // Convert newlines to hard breaks
+      },
     }),
     CustomImage,
-    Link.configure({
-      openOnClick: false,
-    }),
     Placeholder.configure({
       placeholder: "Type '/' for commands",
     }),
-    Underline,
     TextAlign.configure({
       types: ['heading', 'paragraph'],
     }),
@@ -241,7 +236,7 @@ watch(() => props.content, (newContent) => {
   rawContent.value = newContent;
 
   const newBody = parseContent(newContent);
-  if (editor.value && newBody !== (editor.value.storage as any).markdown.getMarkdown()) {
+  if (editor.value && newBody !== editor.value.getMarkdown()) {
     editor.value.commands.setContent(newBody || '');
   }
 }, { immediate: true });
@@ -322,7 +317,7 @@ const handleSave = () => {
     lastSavedContent.value = fullContent;
     isDirty.value = false;
   } else if (editor.value) {
-    const markdownBody = (editor.value.storage as any).markdown.getMarkdown();
+    const markdownBody = editor.value.getMarkdown();
     const fullContent = stringifyContent(markdownBody);
     emit('save', fullContent);
     lastSavedContent.value = fullContent;
@@ -337,7 +332,7 @@ const toggleMode = () => {
     isRawMode.value = false;
   } else {
     if (editor.value) {
-      const markdownBody = (editor.value.storage as any).markdown.getMarkdown();
+      const markdownBody = editor.value.getMarkdown();
       rawContent.value = stringifyContent(markdownBody);
     }
     isRawMode.value = true;
@@ -365,7 +360,7 @@ const getFullContent = () => {
     return rawContent.value;
   }
   if (editor.value) {
-    const markdownBody = (editor.value.storage as any).markdown.getMarkdown();
+    const markdownBody = editor.value.getMarkdown();
     return stringifyContent(markdownBody);
   }
   return rawContent.value;

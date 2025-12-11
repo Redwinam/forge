@@ -27,6 +27,7 @@
     "@tiptap/extension-task-list": "^3.13.0",
     "@tiptap/extension-text-align": "^3.13.0",
     "@tiptap/extension-underline": "^3.13.0",
+    "@tiptap/markdown": "^3.13.0",
     "@tiptap/pm": "^3.13.0",
     "@tiptap/starter-kit": "^3.13.0",
     "@tiptap/vue-3": "^3.13.0",
@@ -38,7 +39,6 @@
     "spark-md5": "^3.0.2",
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.1.17",
-    "tiptap-markdown": "^0.9.0",
     "vue": "^3.5.24"
   },
   "devDependencies": {

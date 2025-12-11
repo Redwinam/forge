@@ -2,6 +2,14 @@ import { mergeAttributes, Node } from '@tiptap/core';
 import { VueNodeViewRenderer } from '@tiptap/vue-3';
 import ImageNode from './ImageNode.vue';
 
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    image: {
+      setImage: (options: { src: string; alt?: string; title?: string }) => ReturnType;
+    };
+  }
+}
+
 export default Node.create({
   name: 'image',
 
@@ -37,19 +45,6 @@ export default Node.create({
 
   addNodeView() {
     return VueNodeViewRenderer(ImageNode);
-  },
-
-  addStorage() {
-    return {
-      markdown: {
-        serialize(state: any, node: any) {
-          const src = node.attrs.src;
-          state.write(`![${node.attrs.alt || ''}](${src})`);
-          state.ensureNewLine();
-          state.write('\n');
-        }
-      }
-    }
   },
 
   addCommands() {
