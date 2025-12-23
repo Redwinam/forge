@@ -180,10 +180,25 @@ const editor = useEditor({
     }),
     Table.configure({
       resizable: true,
+      HTMLAttributes: {
+        class: 'min-w-full border-collapse border border-gray-300 my-4',
+      },
     }),
-    TableRow,
-    TableHeader,
-    TableCell,
+    TableRow.configure({
+      HTMLAttributes: {
+        class: 'border-b border-gray-300',
+      },
+    }),
+    TableHeader.configure({
+      HTMLAttributes: {
+        class: 'border border-gray-300 bg-gray-100 px-4 py-2 font-bold text-left',
+      },
+    }),
+    TableCell.configure({
+      HTMLAttributes: {
+        class: 'border border-gray-300 px-4 py-2',
+      },
+    }),
   ],
   editorProps: {
     attributes: {
@@ -237,7 +252,8 @@ watch(() => props.content, (newContent) => {
 
   const newBody = parseContent(newContent);
   if (editor.value && newBody !== editor.value.getMarkdown()) {
-    editor.value.commands.setContent(newBody || '');
+    // Force markdown parsing when updating from external prop changes
+    editor.value.commands.setContent(newBody || '', { contentType: 'markdown' });
   }
 }, { immediate: true });
 
@@ -328,7 +344,8 @@ const handleSave = () => {
 const toggleMode = () => {
   if (isRawMode.value) {
     const newBody = parseContent(rawContent.value);
-    editor.value?.commands.setContent(newBody || '');
+    // Force markdown parsing when switching back from raw mode
+    editor.value?.commands.setContent(newBody || '', { contentType: 'markdown' });
     isRawMode.value = false;
   } else {
     if (editor.value) {
