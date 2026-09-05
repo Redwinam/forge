@@ -1,3 +1,10 @@
 [workspace]
 members = ["src-tauri"]
 resolver = "2"
+
+# 降低 Tauri 开发构建的磁盘占用：应用保留文件/行号回溯，依赖不生成完整调试信息。
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
