@@ -33,17 +33,14 @@
     "@tiptap/vue-3": "^3.13.0",
     "@types/js-yaml": "^4.0.9",
     "clsx": "^2.1.1",
-    "cos-js-sdk-v5": "^1.10.1",
     "js-yaml": "^4.1.1",
     "lucide-vue-next": "^0.556.0",
-    "spark-md5": "^3.0.2",
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.1.17",
     "vue": "^3.5.24"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
-    "@types/spark-md5": "^3.0.5",
     "@vitejs/plugin-vue": "^6.0.1",
     "@vue/tsconfig": "^0.8.1",
     "sass": "^1.94.3",
