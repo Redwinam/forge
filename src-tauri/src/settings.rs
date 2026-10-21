@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_store::{Store, StoreExt};
 
 /// Kept from when the webview used the store plugin directly, so existing settings still load.
@@ -33,8 +33,12 @@ pub struct CosSettings {
 
 const DEFAULT_COS_PREFIX: &str = "press/";
 
+/// Where the settings store lives; relative paths resolve inside the app data directory.
+pub struct SettingsFile(pub PathBuf);
+
 pub fn open<R: Runtime>(app: &AppHandle<R>) -> Result<Arc<Store<R>>, String> {
-    app.store(STORE_FILE).map_err(|e| e.to_string())
+    let file = app.state::<SettingsFile>();
+    app.store(&file.0).map_err(|e| e.to_string())
 }
 
 fn get_string<R: Runtime>(store: &Store<R>, key: &str) -> Option<String> {

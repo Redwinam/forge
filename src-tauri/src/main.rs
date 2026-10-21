@@ -5,17 +5,15 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::collections::HashMap;
-use reqwest::blocking::Client;
-use hmac::{Hmac, Mac};
-use sha1::Sha1;
-use chrono::{Utc};
+use tauri::ipc::{InvokeBody, Request};
 use tauri::{AppHandle, Runtime};
 use tauri_plugin_dialog::DialogExt;
 
+mod cos;
 mod files;
 mod settings;
 
+use cos::UploadKind;
 use files::FileEntry;
 use settings::{AppState, CosSettings};
 
@@ -84,149 +82,49 @@ fn save_cos_settings<R: Runtime>(app: AppHandle<R>, settings: CosSettings) -> Re
     settings::save_cos_settings(&*settings::open(&app)?, &settings)
 }
 
-#[allow(clippy::too_many_arguments)] // mirrors the fields of the COS signing spec
-fn calculate_signature(secret_id: &str, secret_key: &str, method: &str, uri: &str, params: &HashMap<String, String>, headers: &HashMap<String, String>, start_timestamp: i64, end_timestamp: i64) -> String {
-    let q_sign_algorithm = "sha1";
-    let q_ak = secret_id;
-    let q_sign_time = format!("{};{}", start_timestamp, end_timestamp);
-    let q_key_time = format!("{};{}", start_timestamp, end_timestamp);
-    
-    let mut header_keys: Vec<&String> = headers.keys().collect();
-    header_keys.sort();
-    let q_header_list = header_keys.iter().map(|k| k.to_lowercase()).collect::<Vec<_>>().join(";");
-    
-    let mut url_param_keys: Vec<&String> = params.keys().collect();
-    url_param_keys.sort();
-    let q_url_param_list = url_param_keys.iter().map(|k| k.to_lowercase()).collect::<Vec<_>>().join(";");
-    
-    let format_string = |map: &HashMap<String, String>, keys: &Vec<&String>| -> String {
-        keys.iter()
-            .map(|k| format!("{}={}", k.to_lowercase(), urlencoding::encode(map.get(*k).unwrap())))
-            .collect::<Vec<_>>()
-            .join("&")
+/// Header carrying the file extension next to the raw upload body.
+const EXTENSION_HEADER: &str = "x-forge-extension";
+
+// The webview sends the file as a raw IPC body (an ArrayBuffer), not as a JSON array of numbers.
+fn upload_payload(request: &Request<'_>, kind: UploadKind) -> Result<(Vec<u8>, String), String> {
+    let InvokeBody::Raw(data) = request.body() else {
+        return Err("Upload must be sent as raw bytes".to_string());
     };
-    
-    let http_parameters = format_string(params, &url_param_keys);
-    let http_headers = format_string(headers, &header_keys);
-    
-    let http_string = format!("{}\n{}\n{}\n{}\n", method.to_lowercase(), uri, http_parameters, http_headers);
-    
-    let string_to_sign = format!("{}\n{}\n{}\n", q_sign_algorithm, q_sign_time, sha1_hex(&http_string));
-    
-    let sign_key = hmac_sha1(secret_key, &q_key_time);
-    let signature = hmac_sha1(&sign_key, &string_to_sign);
-    
-    format!("q-sign-algorithm={}&q-ak={}&q-sign-time={}&q-key-time={}&q-header-list={}&q-url-param-list={}&q-signature={}",
-            q_sign_algorithm, q_ak, q_sign_time, q_key_time, q_header_list, q_url_param_list, signature)
+    let extension = request
+        .headers()
+        .get(EXTENSION_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default();
+    let extension = cos::validate_extension(extension, kind)?;
+    cos::validate_size(data.len(), kind)?;
+    Ok((data.clone(), extension))
 }
 
-fn sha1_hex(data: &str) -> String {
-    use sha1::Digest;
-    let mut hasher = Sha1::new();
-    hasher.update(data.as_bytes());
-    hex::encode(hasher.finalize())
-}
-
-fn hmac_sha1(key: &str, data: &str) -> String {
-    type HmacSha1 = Hmac<Sha1>;
-    let mut mac = HmacSha1::new_from_slice(key.as_bytes()).expect("HMAC can take key of any size");
-    mac.update(data.as_bytes());
-    hex::encode(mac.finalize().into_bytes())
-}
-
-fn upload_to_cos(app: &tauri::AppHandle, file_data: Vec<u8>, extension: &str, folder: &str) -> Result<String, String> {
-    let CosSettings { secret_id, secret_key, bucket, region, cdn_domain, prefix } =
-        settings::cos_settings(&*settings::open(app)?);
-
-    if secret_id.is_empty() || secret_key.is_empty() || bucket.is_empty() || region.is_empty() {
-        return Err("COS configuration is missing. Please check settings.".to_string());
-    }
-
-    // Calculate MD5
-    let digest = md5::compute(&file_data);
-    let hash = format!("{:x}", digest);
-    let key = format!("{}{}/{}.{}", prefix, folder, hash, extension);
-    
-    // Check if file exists (HEAD request)
-    let host = format!("{}.cos.{}.myqcloud.com", bucket, region);
-    let uri = format!("/{}", key);
-    let url = format!("https://{}{}", host, uri);
-    
-    let client = Client::new();
-    
-    // HEAD
-    let now = Utc::now();
-    let start_timestamp = now.timestamp();
-    let end_timestamp = start_timestamp + 600;
-    
-    let mut headers = HashMap::new();
-    headers.insert("Host".to_string(), host.clone());
-    
-    let signature = calculate_signature(&secret_id, &secret_key, "HEAD", &uri, &HashMap::new(), &headers, start_timestamp, end_timestamp);
-    
-    let head_res = client.head(&url)
-        .header("Authorization", signature)
-        .header("Host", &host)
-        .send();
-
-    if let Ok(res) = head_res {
-        if res.status().is_success() {
-            // File exists
-            if cdn_domain.is_empty() {
-                return Ok(format!("https://{}/{}", host, key));
-            } else {
-                return Ok(format!("https://{}/{}", cdn_domain, key));
-            }
-        }
-    }
-
-    // PUT
-    let now = Utc::now();
-    let start_timestamp = now.timestamp();
-    let end_timestamp = start_timestamp + 600;
-    let signature = calculate_signature(&secret_id, &secret_key, "PUT", &uri, &HashMap::new(), &headers, start_timestamp, end_timestamp);
-
-    let res = client.put(&url)
-        .header("Authorization", signature)
-        .header("Host", &host)
-        .body(file_data)
-        .send()
-        .map_err(|e| e.to_string())?;
-
-    if res.status().is_success() {
-        if cdn_domain.is_empty() {
-            Ok(format!("https://{}/{}", host, key))
-        } else {
-            Ok(format!("https://{}/{}", cdn_domain, key))
-        }
-    } else {
-        Err(format!("Upload failed: {}", res.status()))
-    }
-}
-
-// Uploads use blocking reqwest. Sync commands run on the main thread and would freeze
-// the window for the whole upload, so run them on the blocking pool instead.
-#[tauri::command]
-async fn upload_image(app: tauri::AppHandle, file_data: Vec<u8>, extension: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || upload_to_cos(&app, file_data, &extension, "images"))
+async fn upload<R: Runtime>(app: AppHandle<R>, request: Request<'_>, kind: UploadKind) -> Result<String, String> {
+    let (data, extension) = upload_payload(&request, kind)?;
+    let settings = settings::cos_settings(&*settings::open(&app)?);
+    // Uploads use blocking reqwest. Sync commands run on the main thread and would freeze
+    // the window for the whole upload, so run them on the blocking pool instead.
+    tauri::async_runtime::spawn_blocking(move || cos::upload(&settings, data, &extension, kind))
         .await
         .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-async fn upload_file(app: tauri::AppHandle, file_data: Vec<u8>, extension: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || upload_to_cos(&app, file_data, &extension, "files"))
-        .await
-        .map_err(|e| e.to_string())?
+async fn upload_image<R: Runtime>(app: AppHandle<R>, request: Request<'_>) -> Result<String, String> {
+    upload(app, request, UploadKind::Image).await
 }
 
-fn main() {
-    tauri::Builder::default()
+#[tauri::command]
+async fn upload_file<R: Runtime>(app: AppHandle<R>, request: Request<'_>) -> Result<String, String> {
+    upload(app, request, UploadKind::File).await
+}
+
+/// Registers the commands the webview talks to and the store they keep settings in.
+fn with_commands<R: Runtime>(builder: tauri::Builder<R>, settings_file: PathBuf) -> tauri::Builder<R> {
+    builder
         .plugin(tauri_plugin_store::Builder::default().build())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
-        .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
+        .manage(settings::SettingsFile(settings_file))
         .invoke_handler(tauri::generate_handler![
             list_files,
             read_file,
@@ -240,6 +138,137 @@ fn main() {
             upload_image,
             upload_file
         ])
+}
+
+fn main() {
+    with_commands(tauri::Builder::default(), PathBuf::from(settings::STORE_FILE))
+        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{json, Value};
+    use tauri::ipc::CallbackFn;
+    use tauri::test::{get_ipc_response, mock_builder, mock_context, noop_assets, MockRuntime, INVOKE_KEY};
+    use tauri::webview::{InvokeRequest, WebviewWindow};
+
+    struct TestApp {
+        dir: tempfile::TempDir,
+        app: tauri::App<MockRuntime>,
+        webview: WebviewWindow<MockRuntime>,
+    }
+
+    impl TestApp {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            let app = with_commands(mock_builder(), dir.path().join("settings.json"))
+                .build(mock_context(noop_assets()))
+                .unwrap();
+            let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default()).build().unwrap();
+            TestApp { dir, app, webview }
+        }
+
+        /// A notes folder inside the temp dir, with a secret file next to it.
+        fn with_notes(self) -> Self {
+            let notes = self.dir.path().join("notes");
+            fs::create_dir_all(&notes).unwrap();
+            fs::write(notes.join("a.md"), "# A").unwrap();
+            fs::write(self.dir.path().join("secret.txt"), "secret").unwrap();
+            settings::set_root_dir(&*settings::open(self.app.handle()).unwrap(), &notes).unwrap();
+            self
+        }
+
+        fn path(&self, rel: &str) -> String {
+            self.dir.path().join(rel).to_string_lossy().into_owned()
+        }
+
+        fn invoke(&self, cmd: &str, body: InvokeBody, headers: &[(&'static str, &str)]) -> Result<Value, Value> {
+            let mut header_map = tauri::http::HeaderMap::new();
+            for (name, value) in headers {
+                header_map.insert(*name, value.parse().unwrap());
+            }
+            get_ipc_response(
+                &self.webview,
+                InvokeRequest {
+                    cmd: cmd.into(),
+                    callback: CallbackFn(0),
+                    error: CallbackFn(1),
+                    url: "http://tauri.localhost".parse().unwrap(),
+                    body,
+                    headers: header_map,
+                    invoke_key: INVOKE_KEY.to_string(),
+                },
+            )
+            .map(|body| body.deserialize::<Value>().unwrap())
+        }
+
+        fn invoke_json(&self, cmd: &str, args: Value) -> Result<Value, Value> {
+            self.invoke(cmd, InvokeBody::Json(args), &[])
+        }
+    }
+
+    fn error_text(result: Result<Value, Value>) -> String {
+        result.expect_err("expected the command to fail").to_string()
+    }
+
+    #[test]
+    fn upload_accepts_raw_bytes() {
+        let app = TestApp::new();
+        // Validation passed and the request reached the COS step, which needs credentials
+        let err = error_text(app.invoke("upload_image", InvokeBody::Raw(vec![1, 2, 3]), &[(EXTENSION_HEADER, "PNG")]));
+        assert!(err.contains("COS configuration is missing"), "{err}");
+    }
+
+    #[test]
+    fn upload_rejects_a_json_number_array() {
+        let app = TestApp::new();
+        let err = error_text(app.invoke_json("upload_image", json!({ "fileData": [1, 2, 3], "extension": "png" })));
+        assert!(err.contains("raw bytes"), "{err}");
+    }
+
+    #[test]
+    fn upload_validates_the_extension_and_size() {
+        let app = TestApp::new();
+        let raw = || InvokeBody::Raw(vec![1, 2, 3]);
+        assert!(error_text(app.invoke("upload_image", raw(), &[(EXTENSION_HEADER, "exe")])).contains("Not an image"));
+        assert!(error_text(app.invoke("upload_file", raw(), &[(EXTENSION_HEADER, "../x")])).contains("extension"));
+        assert!(error_text(app.invoke("upload_file", raw(), &[])).contains("extension"));
+        assert!(error_text(app.invoke("upload_file", InvokeBody::Raw(vec![]), &[(EXTENSION_HEADER, "pdf")])).contains("empty"));
+    }
+
+    #[test]
+    fn file_commands_need_a_notes_folder() {
+        let app = TestApp::new();
+        let err = error_text(app.invoke_json("read_file", json!({ "path": app.path("secret.txt") })));
+        assert!(err.contains("No notes folder"), "{err}");
+    }
+
+    #[test]
+    fn file_commands_work_inside_the_notes_folder() {
+        let app = TestApp::new().with_notes();
+        assert_eq!(app.invoke_json("read_file", json!({ "path": app.path("notes/a.md") })).unwrap(), json!("# A"));
+        app.invoke_json("write_file", json!({ "path": app.path("notes/a.md"), "content": "# B" })).unwrap();
+        assert_eq!(fs::read_to_string(app.path("notes/a.md")).unwrap(), "# B");
+        let listed = app.invoke_json("list_files", json!({ "path": app.path("notes") })).unwrap();
+        assert_eq!(listed, json!([{ "name": "a.md", "path": app.path("notes/a.md"), "is_dir": false }]));
+    }
+
+    #[test]
+    fn file_commands_refuse_paths_outside_the_notes_folder() {
+        let app = TestApp::new().with_notes();
+        for path in [app.path("secret.txt"), app.path("notes/../secret.txt")] {
+            assert!(error_text(app.invoke_json("read_file", json!({ "path": path }))).contains("outside"));
+            assert!(error_text(app.invoke_json("write_file", json!({ "path": path, "content": "x" }))).contains("outside"));
+        }
+        assert!(error_text(app.invoke_json("list_files", json!({ "path": app.path("") }))).contains("outside"));
+        assert!(error_text(app.invoke_json("write_file", json!({ "path": app.path("new.md"), "content": "x" }))).contains("outside"));
+        assert_eq!(fs::read_to_string(app.path("secret.txt")).unwrap(), "secret");
+        assert!(!Path::new(&app.path("new.md")).exists());
+    }
 }

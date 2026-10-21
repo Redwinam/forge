@@ -12,7 +12,7 @@ import { Table } from '@tiptap/extension-table';
 import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { TableRow } from '@tiptap/extension-table-row';
-import { invoke } from '@tauri-apps/api/core';
+import { uploadToCos } from '../lib/upload';
 import {
   coerceMetadataInput,
   joinFrontmatter,
@@ -62,64 +62,8 @@ const stringifyContent = (body: string) => {
   return joinFrontmatter(serializeFrontmatter(frontmatter, metadata.value), body);
 };
 
-const uploadFile = async (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      if (e.target?.result) {
-        try {
-          const arrayBuffer = e.target.result as ArrayBuffer;
-          const bytes = Array.from(new Uint8Array(arrayBuffer));
-          const ext = file.name.split('.').pop() || 'dat';
-          
-          const url = await invoke<string>('upload_file', {
-            fileData: bytes,
-            extension: ext
-          });
-          resolve(url);
-        } catch (err) {
-          reject(err);
-        }
-      } else {
-        reject("Failed to read file");
-      }
-    };
-    reader.onerror = (e) => reject(e);
-    reader.readAsArrayBuffer(file);
-  });
-};
-
-const uploadImage = async (file: File): Promise<string> => {
-  // Using new Rust command instead of JS SDK
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      if (e.target?.result) {
-        try {
-          // Convert ArrayBuffer to number array for Rust
-          const arrayBuffer = e.target.result as ArrayBuffer;
-          const bytes = Array.from(new Uint8Array(arrayBuffer));
-          
-          // Get extension
-          const ext = file.name.split('.').pop() || 'png';
-          
-          // Call Rust command
-          const url = await invoke<string>('upload_image', {
-            fileData: bytes,
-            extension: ext
-          });
-          resolve(url);
-        } catch (err) {
-          reject(err);
-        }
-      } else {
-        reject("Failed to read file");
-      }
-    };
-    reader.onerror = (e) => reject(e);
-    reader.readAsArrayBuffer(file);
-  });
-};
+const uploadImage = (file: File) => uploadToCos(file, 'image');
+const uploadFile = (file: File) => uploadToCos(file, 'file');
 
 const editor = useEditor({
   content: parseContent(props.content),
