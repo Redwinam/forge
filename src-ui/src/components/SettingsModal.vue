@@ -3,13 +3,13 @@ import { ref, watch, onMounted } from 'vue';
 import { X } from 'lucide-vue-next';
 import { invoke } from '@tauri-apps/api/core';
 
-interface CosSettings {
-  secretId: string;
-  secretKey: string;
+// The keys live in the system keychain; the backend only says whether they are set
+interface CosSettingsView {
   bucket: string;
   region: string;
   cdnDomain: string;
   prefix: string;
+  hasCredentials: boolean;
 }
 
 const props = defineProps<{
@@ -24,6 +24,7 @@ const emit = defineEmits<{
 
 const secretId = ref('');
 const secretKey = ref('');
+const hasCredentials = ref(false);
 const bucket = ref('');
 const region = ref('');
 const cdnDomain = ref('');
@@ -37,9 +38,11 @@ watch(() => props.isOpen, async (isOpen) => {
 
 const loadCosSettings = async () => {
   try {
-    const settings = await invoke<CosSettings>('get_cos_settings');
-    secretId.value = settings.secretId;
-    secretKey.value = settings.secretKey;
+    const settings = await invoke<CosSettingsView>('get_cos_settings');
+    // Typed keys are never read back; leaving the fields empty keeps the saved ones
+    secretId.value = '';
+    secretKey.value = '';
+    hasCredentials.value = settings.hasCredentials;
     bucket.value = settings.bucket;
     region.value = settings.region;
     cdnDomain.value = settings.cdnDomain;
@@ -51,7 +54,7 @@ const loadCosSettings = async () => {
 
 const handleSave = async () => {
   try {
-    const settings: CosSettings = {
+    const settings = {
       secretId: secretId.value,
       secretKey: secretKey.value,
       bucket: bucket.value,
@@ -64,6 +67,16 @@ const handleSave = async () => {
   } catch (e) {
     console.error("Failed to save settings", e);
     alert("Failed to save settings: " + e);
+  }
+};
+
+const handleClearCredentials = async () => {
+  try {
+    await invoke('clear_cos_credentials');
+    hasCredentials.value = false;
+  } catch (e) {
+    console.error("Failed to remove COS keys", e);
+    alert("Failed to remove COS keys: " + e);
   }
 };
 
@@ -113,11 +126,15 @@ onMounted(() => {
           <div class="grid grid-cols-1 gap-4">
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Secret ID</label>
-              <input type="password" v-model="secretId" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" />
+              <input type="password" v-model="secretId" autocomplete="off" :placeholder="hasCredentials ? 'Saved — leave empty to keep' : ''" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" />
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Secret Key</label>
-              <input type="password" v-model="secretKey" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" />
+              <input type="password" v-model="secretKey" autocomplete="off" :placeholder="hasCredentials ? 'Saved — leave empty to keep' : ''" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" />
+              <p class="mt-1 text-xs text-gray-500 flex items-center gap-2">
+                <span>{{ hasCredentials ? 'Keys are stored in the system keychain.' : 'Keys are stored in the system keychain once saved.' }}</span>
+                <button v-if="hasCredentials" @click="handleClearCredentials" class="text-red-600 hover:underline">Remove</button>
+              </p>
             </div>
             <div class="grid grid-cols-2 gap-4">
               <div>

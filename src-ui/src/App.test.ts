@@ -22,7 +22,10 @@ vi.mock('@tauri-apps/api/core', () => ({
       case 'set_sidebar_width':
         return null;
       case 'get_cos_settings':
-        return { secretId: '', secretKey: '', bucket: '', region: '', cdnDomain: '', prefix: 'press/' };
+        return { bucket: 'b-1', region: 'ap-shanghai', cdnDomain: '', prefix: 'press/', hasCredentials: true };
+      case 'save_cos_settings':
+      case 'clear_cos_credentials':
+        return null;
       case 'list_files':
         return Object.keys(files)
           .filter((p) => p.startsWith(args.path + '/'))
@@ -167,5 +170,36 @@ describe('notes folder', () => {
     await flushPromises();
 
     expect(calls.find((c) => c.cmd === 'load_app_state')!.args).toEqual({ legacyRootDir: '/legacy' });
+  });
+});
+
+describe('COS settings', () => {
+  const openSettings = async () => {
+    await wrapper!.find('button[title="Settings"]').trigger('click');
+    await flushPromises();
+  };
+  const keyInputs = () => wrapper!.findAll('input[type="password"]');
+
+  it('never shows the saved keys and keeps them when left empty', async () => {
+    await openSettings();
+    expect(keyInputs().map((i) => (i.element as HTMLInputElement).value)).toEqual(['', '']);
+    expect(wrapper!.text()).toContain('stored in the system keychain');
+
+    await wrapper!.findAll('button').find((b) => b.text() === 'Save Changes')!.trigger('click');
+    await flushPromises();
+    const save = calls.find((c) => c.cmd === 'save_cos_settings')!;
+    expect(save.args.settings).toMatchObject({ secretId: '', secretKey: '', bucket: 'b-1', region: 'ap-shanghai' });
+  });
+
+  it('sends newly typed keys once', async () => {
+    await openSettings();
+    await keyInputs()[0]!.setValue('AKIDnew');
+    await keyInputs()[1]!.setValue('new-key');
+    await wrapper!.findAll('button').find((b) => b.text() === 'Save Changes')!.trigger('click');
+    await flushPromises();
+    expect(calls.find((c) => c.cmd === 'save_cos_settings')!.args.settings).toMatchObject({
+      secretId: 'AKIDnew',
+      secretKey: 'new-key',
+    });
   });
 });

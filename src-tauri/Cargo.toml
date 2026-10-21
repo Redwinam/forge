@@ -27,6 +27,7 @@ dotenv = "0.15"
 tauri-plugin-window-state = "2.4.1"
 tauri-plugin-store = "2.4.1"
 md5 = "0.8.0"
+keyring = "4.2"
 
 [target.'cfg(unix)'.dependencies]
 xattr = "1"
