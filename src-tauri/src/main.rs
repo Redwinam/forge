@@ -11,7 +11,6 @@ use tauri_plugin_store::StoreExt;
 use reqwest::blocking::Client;
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
-use hex;
 use chrono::{Utc};
 
 #[derive(Serialize, Clone)]
@@ -31,20 +30,18 @@ fn list_files(path: String) -> Result<Vec<FileEntry>, String> {
     let mut entries = Vec::new();
     match fs::read_dir(root) {
         Ok(dir) => {
-            for entry in dir {
-                if let Ok(entry) = entry {
-                    let path = entry.path();
-                    let name = path.file_name().unwrap().to_string_lossy().to_string();
-                    let is_dir = path.is_dir();
-                    // Filter hidden files
-                    if name.starts_with(".") { continue; }
-                    
-                    entries.push(FileEntry {
-                        name,
-                        path: path.to_string_lossy().to_string(),
-                        is_dir,
-                    });
-                }
+            for entry in dir.flatten() {
+                let path = entry.path();
+                let name = entry.file_name().to_string_lossy().to_string();
+                let is_dir = path.is_dir();
+                // Filter hidden files
+                if name.starts_with(".") { continue; }
+                
+                entries.push(FileEntry {
+                    name,
+                    path: path.to_string_lossy().to_string(),
+                    is_dir,
+                });
             }
         }
         Err(e) => return Err(e.to_string()),
@@ -71,6 +68,7 @@ fn write_file(path: String, content: String) -> Result<(), String> {
     fs::write(path, content).map_err(|e| e.to_string())
 }
 
+#[allow(clippy::too_many_arguments)] // mirrors the fields of the COS signing spec
 fn calculate_signature(secret_id: &str, secret_key: &str, method: &str, uri: &str, params: &HashMap<String, String>, headers: &HashMap<String, String>, start_timestamp: i64, end_timestamp: i64) -> String {
     let q_sign_algorithm = "sha1";
     let q_ak = secret_id;
