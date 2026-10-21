@@ -44,8 +44,12 @@ const startResizing = () => {
 const stopResizing = async () => {
   if (isResizing.value) {
     isResizing.value = false;
-    await store.set('sidebar_width', width.value);
-    await store.save();
+    try {
+      await store.set('sidebar_width', width.value);
+      await store.save();
+    } catch (e) {
+      console.error("Failed to save sidebar width", e);
+    }
   }
 };
 

@@ -32,8 +32,12 @@ onMounted(() => {
 
 watch(currentPath, async (newPath) => {
   if (newPath) {
-    await store.set('last_opened_file', newPath);
-    await store.save();
+    try {
+      await store.set('last_opened_file', newPath);
+      await store.save();
+    } catch (e) {
+      console.error("Failed to remember last opened file", e);
+    }
   }
 });
 
