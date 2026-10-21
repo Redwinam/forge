@@ -326,18 +326,10 @@ const handleFileUploadClick = () => {
   input.click();
 };
 
+// The parent calls setSaved() after the write succeeds, so a failed save stays dirty
 const handleSave = () => {
-  if (isRawMode.value) {
-    const fullContent = rawContent.value;
-    emit('save', fullContent);
-    lastSavedContent.value = fullContent;
-    isDirty.value = false;
-  } else if (editor.value) {
-    const markdownBody = editor.value.getMarkdown();
-    const fullContent = stringifyContent(markdownBody);
-    emit('save', fullContent);
-    lastSavedContent.value = fullContent;
-    isDirty.value = false;
+  if (isRawMode.value || editor.value) {
+    emit('save', getFullContent());
   }
 };
 
@@ -385,7 +377,8 @@ const getFullContent = () => {
 
 const setSaved = (content: string) => {
   lastSavedContent.value = content;
-  isDirty.value = false;
+  // Edits made while the write was in flight are still unsaved
+  isDirty.value = getFullContent() !== content;
 };
 
 defineExpose({

@@ -47,8 +47,8 @@ const handleFileSelect = async (path: string) => {
       
       if (needsSave) {
         const full = editorRef.value.getFullContent();
-        await handleSave(full);
-        editorRef.value.setSaved(full);
+        // Stay on the current file if saving failed, otherwise the unsaved edits are lost
+        if (!(await handleSave(full))) return;
       }
     }
 
@@ -61,16 +61,22 @@ const handleFileSelect = async (path: string) => {
   }
 };
 
-const handleSave = async (content: string) => {
-  if (!currentPath.value) return;
+const handleSave = async (content: string): Promise<boolean> => {
+  const path = currentPath.value;
+  if (!path) return false;
   isSaving.value = true;
   try {
-    await invoke('write_file', { path: currentPath.value, content });
+    await invoke('write_file', { path, content });
     console.log("Saved!");
-    // Update currentContent to reflect saved state if needed, though Editor handles it
+    // Only mark the editor as saved once the write succeeded
+    if (currentPath.value === path) {
+      editorRef.value?.setSaved(content);
+    }
+    return true;
   } catch (e) {
     console.error("Failed to save", e);
     alert("Failed to save: " + e);
+    return false;
   } finally {
     isSaving.value = false;
   }
