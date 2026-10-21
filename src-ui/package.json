@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "dependencies": {
     "@tailwindcss/typography": "^0.5.19",
@@ -31,13 +32,12 @@
     "@tiptap/pm": "^3.13.0",
     "@tiptap/starter-kit": "^3.13.0",
     "@tiptap/vue-3": "^3.13.0",
-    "@types/js-yaml": "^4.0.9",
     "clsx": "^2.1.1",
-    "js-yaml": "^4.1.1",
     "lucide-vue-next": "^0.556.0",
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.1.17",
-    "vue": "^3.5.24"
+    "vue": "^3.5.24",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
@@ -46,6 +46,7 @@
     "sass": "^1.94.3",
     "typescript": "~5.9.3",
     "vite": "^7.2.4",
+    "vitest": "^5.0.5",
     "vue-tsc": "^3.1.4"
   }
 }

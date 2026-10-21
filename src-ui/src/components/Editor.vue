@@ -13,7 +13,7 @@ import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { TableRow } from '@tiptap/extension-table-row';
 import { invoke } from '@tauri-apps/api/core';
-import yaml from 'js-yaml';
+import { joinFrontmatter, serializeFrontmatter, splitFrontmatter, type Frontmatter } from '../lib/frontmatter';
 
 import EditorToolbar from './editor/EditorToolbar.vue';
 import MetadataPanel from './editor/MetadataPanel.vue';
@@ -29,6 +29,8 @@ const emit = defineEmits<{
 }>();
 
 const isUploading = ref(false);
+// The frontmatter as loaded; `metadata` is the editable copy that gets diffed against it on save
+let frontmatter: Frontmatter = splitFrontmatter('').frontmatter;
 const metadata = ref<Record<string, any>>({});
 const showMetadata = ref(true);
 const isRawMode = ref(false);
@@ -42,40 +44,16 @@ const saveStatus = computed(() => {
   return 'saved';
 });
 
-// Parse frontmatter
+// Split off the frontmatter and return the markdown body
 const parseContent = (fullContent: string) => {
-  const frontmatterRegex = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
-  const match = fullContent.match(frontmatterRegex);
-
-  if (match) {
-    try {
-      const yamlContent = match[1];
-      let bodyContent = match[2] || '';
-      const parsedData = yaml.load(yamlContent || '') as Record<string, any>;
-      
-      metadata.value = parsedData || {};
-      
-      return bodyContent;
-    } catch (e) {
-      console.error("Failed to parse YAML", e);
-      metadata.value = {};
-      return fullContent;
-    }
-  }
-
-  metadata.value = {};
-  return fullContent;
+  const parsed = splitFrontmatter(fullContent);
+  frontmatter = parsed.frontmatter;
+  metadata.value = structuredClone(frontmatter.data);
+  return parsed.body;
 };
 
 const stringifyContent = (body: string) => {
-  if (Object.keys(metadata.value).length === 0) return body;
-  try {
-    const yamlString = yaml.dump(metadata.value);
-    return `---\n${yamlString}---\n${body}`;
-  } catch (e) {
-    console.error("Failed to stringify YAML", e);
-    return body;
-  }
+  return joinFrontmatter(serializeFrontmatter(frontmatter, metadata.value), body);
 };
 
 const uploadFile = async (file: File): Promise<string> => {
