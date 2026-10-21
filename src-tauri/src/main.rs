@@ -13,6 +13,8 @@ use hmac::{Hmac, Mac};
 use sha1::Sha1;
 use chrono::{Utc};
 
+mod files;
+
 #[derive(Serialize, Clone)]
 struct FileEntry {
     name: String,
@@ -65,7 +67,7 @@ fn read_file(path: String) -> Result<String, String> {
 
 #[tauri::command]
 fn write_file(path: String, content: String) -> Result<(), String> {
-    fs::write(path, content).map_err(|e| e.to_string())
+    files::write_atomic(Path::new(&path), content.as_bytes()).map_err(|e| e.to_string())
 }
 
 #[allow(clippy::too_many_arguments)] // mirrors the fields of the COS signing spec
