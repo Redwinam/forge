@@ -4,11 +4,25 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 
 const files: Record<string, string> = {};
 const writes: { path: string; content: string }[] = [];
+const calls: { cmd: string; args: any }[] = [];
 let failWrites = false;
+let rootDir: string | null = '/notes';
+let pickedRoot: string | null = null;
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(async (cmd: string, args: any) => {
+    calls.push({ cmd, args });
     switch (cmd) {
+      case 'load_app_state':
+        return { rootDir, lastOpenedFile: null, sidebarWidth: null };
+      case 'choose_root_dir':
+        rootDir = pickedRoot ?? rootDir;
+        return pickedRoot;
+      case 'set_last_opened_file':
+      case 'set_sidebar_width':
+        return null;
+      case 'get_cos_settings':
+        return { secretId: '', secretKey: '', bucket: '', region: '', cdnDomain: '', prefix: 'press/' };
       case 'list_files':
         return Object.keys(files)
           .filter((p) => p.startsWith(args.path + '/'))
@@ -25,16 +39,6 @@ vi.mock('@tauri-apps/api/core', () => ({
         throw `unmocked command ${cmd}`;
     }
   }),
-}));
-
-vi.mock('@tauri-apps/plugin-store', () => ({
-  LazyStore: class {
-    async get() {
-      return null;
-    }
-    async set() {}
-    async save() {}
-  },
 }));
 
 import App from './App.vue';
@@ -67,8 +71,11 @@ beforeEach(async () => {
   files['/notes/a.md'] = NOTE_A;
   files['/notes/b.md'] = NOTE_B;
   writes.length = 0;
+  calls.length = 0;
   failWrites = false;
-  localStorage.setItem('forge_root_path', '/notes');
+  rootDir = '/notes';
+  pickedRoot = null;
+  localStorage.clear();
   vi.stubGlobal('alert', vi.fn());
   wrapper = mount(App, { attachTo: document.body });
   await flushPromises();
@@ -130,5 +137,35 @@ describe('switching files', () => {
     await openFile('b.md');
     expect(writes).toHaveLength(0);
     expect(files['/notes/a.md']).toBe(NOTE_A);
+  });
+});
+
+describe('notes folder', () => {
+  it('is changed through the native picker after saving the open note', async () => {
+    files['/other/c.md'] = '# C\n';
+    pickedRoot = '/other';
+    await metadataInput('旧标题').setValue('新标题');
+
+    await wrapper!.find('button[title="Settings"]').trigger('click');
+    const choose = wrapper!.findAll('button').find((b) => b.text() === 'Choose…')!;
+    await choose.trigger('click');
+    await flushPromises();
+
+    expect(writes.map((w) => w.path)).toEqual(['/notes/a.md']);
+    expect(calls.some((c) => c.cmd === 'choose_root_dir')).toBe(true);
+    // The open note is outside the new folder, so it is closed
+    expect(wrapper!.find('.ProseMirror').exists()).toBe(false);
+    expect(wrapper!.text()).toContain('c.md');
+  });
+
+  it('hands the root kept by older versions to the backend once', async () => {
+    wrapper!.unmount();
+    rootDir = null;
+    localStorage.setItem('forge_root_path', '/legacy');
+    calls.length = 0;
+    wrapper = mount(App, { attachTo: document.body });
+    await flushPromises();
+
+    expect(calls.find((c) => c.cmd === 'load_app_state')!.args).toEqual({ legacyRootDir: '/legacy' });
   });
 });

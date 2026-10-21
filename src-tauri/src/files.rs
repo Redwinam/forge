@@ -1,7 +1,61 @@
+use serde::Serialize;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct FileEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+}
+
+/// Checks that `path` lies inside `root` once both are canonicalized, so neither `..` nor a
+/// symlink can reach files elsewhere, and returns the canonical path. A path that doesn't
+/// exist yet is accepted when its parent directory is inside the root.
+pub fn resolve_in_root(root: &Path, path: &Path) -> io::Result<PathBuf> {
+    let root = fs::canonicalize(root)?;
+    let resolved = match fs::canonicalize(path) {
+        Ok(resolved) => resolved,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            let name = match path.file_name() {
+                Some(name) if path.parent().is_some() => name,
+                _ => return Err(e),
+            };
+            fs::canonicalize(path.parent().unwrap_or(Path::new(".")))?.join(name)
+        }
+        Err(e) => return Err(e),
+    };
+    if resolved.starts_with(&root) {
+        Ok(resolved)
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "Path is outside the notes folder",
+        ))
+    }
+}
+
+/// Lists a directory with folders first, skipping hidden entries. Returned paths are built
+/// from `dir` as given, so they stay comparable with the paths the UI already holds.
+pub fn list_dir(dir: &Path) -> io::Result<Vec<FileEntry>> {
+    let mut entries = Vec::new();
+    for entry in fs::read_dir(dir)?.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') {
+            continue;
+        }
+        let path = dir.join(entry.file_name());
+        entries.push(FileEntry {
+            name,
+            is_dir: path.is_dir(),
+            path: path.to_string_lossy().to_string(),
+        });
+    }
+    entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name)));
+    Ok(entries)
+}
 
 /// Replaces the file at `path` without ever leaving it half-written: the content goes to a
 /// temporary file next to it, which is flushed to disk and then renamed over the original.
@@ -113,6 +167,85 @@ mod tests {
             .collect();
         names.sort();
         names
+    }
+
+    fn notes_root() -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("notes");
+        fs::create_dir_all(root.join("sub")).unwrap();
+        fs::write(root.join("a.md"), "a").unwrap();
+        fs::write(root.join("sub/b.md"), "b").unwrap();
+        fs::write(dir.path().join("secret.txt"), "secret").unwrap();
+        (dir, root)
+    }
+
+    #[test]
+    fn accepts_paths_inside_the_root() {
+        let (_dir, root) = notes_root();
+        let canonical_root = fs::canonicalize(&root).unwrap();
+
+        assert_eq!(resolve_in_root(&root, &root).unwrap(), canonical_root);
+        assert_eq!(resolve_in_root(&root, &root.join("sub/b.md")).unwrap(), canonical_root.join("sub/b.md"));
+        // Not created yet, but its folder is inside the root
+        assert_eq!(resolve_in_root(&root, &root.join("sub/new.md")).unwrap(), canonical_root.join("sub/new.md"));
+    }
+
+    #[test]
+    fn rejects_paths_outside_the_root() {
+        let (dir, root) = notes_root();
+
+        for path in [
+            dir.path().join("secret.txt"),
+            root.join("../secret.txt"),
+            root.join("sub/../../secret.txt"),
+            root.join("../notes-sibling.md"),
+            dir.path().to_path_buf(),
+            PathBuf::from("/"),
+        ] {
+            let err = resolve_in_root(&root, &path).unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::PermissionDenied, "{}", path.display());
+        }
+    }
+
+    #[test]
+    fn rejects_a_sibling_folder_sharing_the_root_prefix() {
+        let (dir, root) = notes_root();
+        let sibling = dir.path().join("notes-old");
+        fs::create_dir(&sibling).unwrap();
+        fs::write(sibling.join("c.md"), "c").unwrap();
+
+        assert!(resolve_in_root(&root, &sibling.join("c.md")).is_err());
+    }
+
+    #[test]
+    fn rejects_missing_files_in_missing_folders() {
+        let (_dir, root) = notes_root();
+        assert!(resolve_in_root(&root, &root.join("nope/new.md")).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlinks_that_leave_the_root() {
+        let (dir, root) = notes_root();
+        std::os::unix::fs::symlink(dir.path().join("secret.txt"), root.join("link.md")).unwrap();
+        std::os::unix::fs::symlink(dir.path(), root.join("escape")).unwrap();
+
+        assert!(resolve_in_root(&root, &root.join("link.md")).is_err());
+        assert!(resolve_in_root(&root, &root.join("escape/secret.txt")).is_err());
+        assert!(resolve_in_root(&root, &root.join("escape/new.md")).is_err());
+    }
+
+    #[test]
+    fn lists_folders_first_and_hides_dotfiles() {
+        let (_dir, root) = notes_root();
+        fs::write(root.join(".hidden.md"), "").unwrap();
+        fs::write(root.join("0.md"), "").unwrap();
+
+        let entries = list_dir(&root).unwrap();
+
+        let names: Vec<_> = entries.iter().map(|e| (e.name.as_str(), e.is_dir)).collect();
+        assert_eq!(names, [("sub", true), ("0.md", false), ("a.md", false)]);
+        assert_eq!(entries[0].path, root.join("sub").to_string_lossy());
     }
 
     #[test]

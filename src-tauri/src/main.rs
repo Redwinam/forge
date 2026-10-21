@@ -3,71 +3,85 @@
     windows_subsystem = "windows"
 )]
 
-use serde::{Serialize};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::collections::HashMap;
-use tauri_plugin_store::StoreExt;
 use reqwest::blocking::Client;
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
 use chrono::{Utc};
+use tauri::{AppHandle, Runtime};
+use tauri_plugin_dialog::DialogExt;
 
 mod files;
+mod settings;
 
-#[derive(Serialize, Clone)]
-struct FileEntry {
-    name: String,
-    path: String,
-    is_dir: bool,
+use files::FileEntry;
+use settings::{AppState, CosSettings};
+
+/// Every file command goes through this: the path must resolve to somewhere inside the
+/// notes folder the user picked.
+fn resolve_in_notes<R: Runtime>(app: &AppHandle<R>, path: &str) -> Result<PathBuf, String> {
+    let store = settings::open(app)?;
+    let root = settings::root_dir(&store).ok_or("No notes folder selected")?;
+    files::resolve_in_root(&root, Path::new(path)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn list_files(path: String) -> Result<Vec<FileEntry>, String> {
-    let root = Path::new(&path);
-    if !root.exists() {
-        return Err("Path does not exist".to_string());
-    }
-
-    let mut entries = Vec::new();
-    match fs::read_dir(root) {
-        Ok(dir) => {
-            for entry in dir.flatten() {
-                let path = entry.path();
-                let name = entry.file_name().to_string_lossy().to_string();
-                let is_dir = path.is_dir();
-                // Filter hidden files
-                if name.starts_with(".") { continue; }
-                
-                entries.push(FileEntry {
-                    name,
-                    path: path.to_string_lossy().to_string(),
-                    is_dir,
-                });
-            }
-        }
-        Err(e) => return Err(e.to_string()),
-    }
-    
-    entries.sort_by(|a, b| {
-        if a.is_dir == b.is_dir {
-            a.name.cmp(&b.name)
-        } else {
-            if a.is_dir { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater }
-        }
-    });
-    
-    Ok(entries)
+fn list_files<R: Runtime>(app: AppHandle<R>, path: String) -> Result<Vec<FileEntry>, String> {
+    resolve_in_notes(&app, &path)?;
+    files::list_dir(Path::new(&path)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn read_file(path: String) -> Result<String, String> {
+fn read_file<R: Runtime>(app: AppHandle<R>, path: String) -> Result<String, String> {
+    let path = resolve_in_notes(&app, &path)?;
     fs::read_to_string(path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn write_file(path: String, content: String) -> Result<(), String> {
-    files::write_atomic(Path::new(&path), content.as_bytes()).map_err(|e| e.to_string())
+fn write_file<R: Runtime>(app: AppHandle<R>, path: String, content: String) -> Result<(), String> {
+    let path = resolve_in_notes(&app, &path)?;
+    files::write_atomic(&path, content.as_bytes()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn load_app_state<R: Runtime>(app: AppHandle<R>, legacy_root_dir: Option<String>) -> Result<AppState, String> {
+    settings::load_app_state(&*settings::open(&app)?, legacy_root_dir.as_deref())
+}
+
+/// The root can only change through the native folder picker, so a compromised webview
+/// can't point the file commands somewhere else.
+#[tauri::command]
+async fn choose_root_dir<R: Runtime>(app: AppHandle<R>) -> Result<Option<String>, String> {
+    let picker = app.dialog().file().set_title("Choose your notes folder");
+    let picked = tauri::async_runtime::spawn_blocking(move || picker.blocking_pick_folder())
+        .await
+        .map_err(|e| e.to_string())?;
+    let Some(dir) = picked else { return Ok(None) };
+    let dir = dir.into_path().map_err(|e| e.to_string())?;
+    settings::set_root_dir(&*settings::open(&app)?, &dir)?;
+    Ok(Some(dir.to_string_lossy().into_owned()))
+}
+
+#[tauri::command]
+fn set_last_opened_file<R: Runtime>(app: AppHandle<R>, path: Option<String>) -> Result<(), String> {
+    settings::set_last_opened_file(&*settings::open(&app)?, path.as_deref())
+}
+
+#[tauri::command]
+fn set_sidebar_width<R: Runtime>(app: AppHandle<R>, width: f64) -> Result<(), String> {
+    settings::set_sidebar_width(&*settings::open(&app)?, width)
+}
+
+#[tauri::command]
+fn get_cos_settings<R: Runtime>(app: AppHandle<R>) -> Result<CosSettings, String> {
+    Ok(settings::cos_settings(&*settings::open(&app)?))
+}
+
+#[tauri::command]
+fn save_cos_settings<R: Runtime>(app: AppHandle<R>, settings: CosSettings) -> Result<(), String> {
+    settings::save_cos_settings(&*settings::open(&app)?, &settings)
 }
 
 #[allow(clippy::too_many_arguments)] // mirrors the fields of the COS signing spec
@@ -121,14 +135,8 @@ fn hmac_sha1(key: &str, data: &str) -> String {
 }
 
 fn upload_to_cos(app: &tauri::AppHandle, file_data: Vec<u8>, extension: &str, folder: &str) -> Result<String, String> {
-    let store = app.store(".settings.dat").map_err(|e| e.to_string())?;
-    
-    let secret_id = store.get("cos_secret_id").and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
-    let secret_key = store.get("cos_secret_key").and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
-    let bucket = store.get("cos_bucket").and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
-    let region = store.get("cos_region").and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
-    let prefix = store.get("cos_prefix").and_then(|v| v.as_str().map(String::from)).unwrap_or("press/".to_string());
-    let cdn_domain = store.get("cos_cdn_domain").and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
+    let CosSettings { secret_id, secret_key, bucket, region, cdn_domain, prefix } =
+        settings::cos_settings(&*settings::open(app)?);
 
     if secret_id.is_empty() || secret_key.is_empty() || bucket.is_empty() || region.is_empty() {
         return Err("COS configuration is missing. Please check settings.".to_string());
@@ -219,7 +227,19 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![list_files, read_file, write_file, upload_image, upload_file])
+        .invoke_handler(tauri::generate_handler![
+            list_files,
+            read_file,
+            write_file,
+            load_app_state,
+            choose_root_dir,
+            set_last_opened_file,
+            set_sidebar_width,
+            get_cos_settings,
+            save_cos_settings,
+            upload_image,
+            upload_file
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

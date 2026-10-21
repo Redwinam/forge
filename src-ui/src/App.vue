@@ -1,60 +1,67 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
-import { LazyStore } from '@tauri-apps/plugin-store';
 import Sidebar from './components/Sidebar.vue';
 import Editor from './components/Editor.vue';
 import SettingsModal from './components/SettingsModal.vue';
 
-const store = new LazyStore('.settings.dat');
+interface AppState {
+  rootDir: string | null;
+  lastOpenedFile: string | null;
+  sidebarWidth: number | null;
+}
+
 const currentPath = ref<string | null>(null);
 const currentContent = ref('');
 const isSettingsOpen = ref(false);
 const isSaving = ref(false);
 const editorRef = ref<any>(null);
 
-const rootPath = ref(localStorage.getItem('forge_root_path') || '/Users/redwinam/Developer/notes/Press/docs');
+const rootPath = ref<string | null>(null);
+const sidebarWidth = ref<number | null>(null);
 
-const loadLastOpenedFile = async () => {
+// Earlier versions kept the root in localStorage; the backend adopts it once and owns it from then on
+const LEGACY_ROOT_KEY = 'forge_root_path';
+
+onMounted(async () => {
   try {
-    const lastFile = await store.get<string>('last_opened_file');
-    if (lastFile) {
-      handleFileSelect(lastFile);
+    const legacyRootDir = localStorage.getItem(LEGACY_ROOT_KEY) || '/Users/redwinam/Developer/notes/Press/docs';
+    const state = await invoke<AppState>('load_app_state', { legacyRootDir });
+    if (state.rootDir) localStorage.removeItem(LEGACY_ROOT_KEY);
+    rootPath.value = state.rootDir;
+    sidebarWidth.value = state.sidebarWidth;
+    if (state.lastOpenedFile) {
+      handleFileSelect(state.lastOpenedFile);
     }
   } catch (e) {
-    console.error("Failed to load last opened file", e);
+    console.error("Failed to load app state", e);
   }
-};
-
-onMounted(() => {
-  loadLastOpenedFile();
 });
 
 watch(currentPath, async (newPath) => {
   if (newPath) {
     try {
-      await store.set('last_opened_file', newPath);
-      await store.save();
+      await invoke('set_last_opened_file', { path: newPath });
     } catch (e) {
       console.error("Failed to remember last opened file", e);
     }
   }
 });
 
+// Saves the open note if it has unsaved edits; false means it couldn't be saved
+const saveIfDirty = async (): Promise<boolean> => {
+  if (!currentPath.value || !editorRef.value) return true;
+  const isDirty = editorRef.value.isDirty;
+  // Handle both ref (needs .value) and unwrapped boolean cases
+  const needsSave = typeof isDirty === 'boolean' ? isDirty : isDirty?.value;
+  if (!needsSave) return true;
+  return handleSave(editorRef.value.getFullContent());
+};
+
 const handleFileSelect = async (path: string) => {
   try {
-    // Auto-save if dirty
-    if (currentPath.value && editorRef.value) {
-      const isDirty = editorRef.value.isDirty;
-      // Handle both ref (needs .value) and unwrapped boolean cases
-      const needsSave = typeof isDirty === 'boolean' ? isDirty : isDirty?.value;
-      
-      if (needsSave) {
-        const full = editorRef.value.getFullContent();
-        // Stay on the current file if saving failed, otherwise the unsaved edits are lost
-        if (!(await handleSave(full))) return;
-      }
-    }
+    // Stay on the current file if saving failed, otherwise the unsaved edits are lost
+    if (!(await saveIfDirty())) return;
 
     const content = await invoke<string>('read_file', { path });
     currentPath.value = path;
@@ -86,9 +93,21 @@ const handleSave = async (content: string): Promise<boolean> => {
   }
 };
 
-const handleSaveSettings = (newRootPath: string) => {
-  rootPath.value = newRootPath;
-  localStorage.setItem('forge_root_path', newRootPath);
+const handleChooseRoot = async () => {
+  // The open note must be saved while it is still inside the current root
+  if (!(await saveIfDirty())) return;
+  try {
+    const dir = await invoke<string | null>('choose_root_dir');
+    if (!dir || dir === rootPath.value) return;
+    rootPath.value = dir;
+    if (currentPath.value && !currentPath.value.startsWith(dir + '/')) {
+      currentPath.value = null;
+      currentContent.value = '';
+    }
+  } catch (e) {
+    console.error("Failed to choose notes folder", e);
+    alert("Failed to choose notes folder: " + e);
+  }
 };
 </script>
 
@@ -97,6 +116,7 @@ const handleSaveSettings = (newRootPath: string) => {
     <Sidebar 
       :rootPath="rootPath" 
       :currentFile="currentPath"
+      :initialWidth="sidebarWidth"
       @select="handleFileSelect"
       @open-settings="isSettingsOpen = true"
     />
@@ -120,7 +140,7 @@ const handleSaveSettings = (newRootPath: string) => {
       :isOpen="isSettingsOpen"
       :rootPath="rootPath"
       @close="isSettingsOpen = false"
-      @save="handleSaveSettings"
+      @choose-root="handleChooseRoot"
     />
   </div>
 </template>

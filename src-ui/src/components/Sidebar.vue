@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
-import { LazyStore } from '@tauri-apps/plugin-store';
 import { Settings, ChevronLeft, Menu } from 'lucide-vue-next';
 import FileTreeItem from './FileTreeItem.vue';
 
@@ -13,8 +12,9 @@ interface FileEntry {
 }
 
 const props = defineProps<{
-  rootPath: string;
+  rootPath: string | null;
   currentFile: string | null;
+  initialWidth: number | null;
 }>();
 
 const emit = defineEmits<{
@@ -22,7 +22,6 @@ const emit = defineEmits<{
   (e: 'open-settings'): void;
 }>();
 
-const store = new LazyStore('.settings.dat');
 const rootFiles = ref<FileEntry[]>([]);
 const width = ref(260);
 const isResizing = ref(false);
@@ -41,12 +40,15 @@ const startResizing = () => {
   isResizing.value = true;
 };
 
+watch(() => props.initialWidth, (saved) => {
+  if (saved) width.value = saved;
+}, { immediate: true });
+
 const stopResizing = async () => {
   if (isResizing.value) {
     isResizing.value = false;
     try {
-      await store.set('sidebar_width', width.value);
-      await store.save();
+      await invoke('set_sidebar_width', { width: width.value });
     } catch (e) {
       console.error("Failed to save sidebar width", e);
     }
@@ -62,18 +64,9 @@ const resize = (e: MouseEvent) => {
   }
 };
 
-onMounted(async () => {
+onMounted(() => {
   window.addEventListener('mousemove', resize);
   window.addEventListener('mouseup', stopResizing);
-  
-  try {
-    const savedWidth = await store.get<number>('sidebar_width');
-    if (savedWidth) {
-      width.value = savedWidth;
-    }
-  } catch (e) {
-    console.error("Failed to load sidebar width", e);
-  }
 });
 
 onUnmounted(() => {
@@ -105,7 +98,7 @@ const handleSelect = (path: string) => {
   >
     <!-- Header -->
     <div class="h-[47px] flex items-center justify-between px-3 border-b border-gray-200 shrink-0">
-      <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider truncate" :title="rootPath">
+      <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider truncate" :title="rootPath ?? undefined">
         {{ rootPath ? rootPath.split('/').pop() : 'Files' }}
       </span>
       <div class="flex items-center">

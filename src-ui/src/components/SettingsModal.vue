@@ -1,21 +1,27 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue';
 import { X } from 'lucide-vue-next';
-import { LazyStore } from '@tauri-apps/plugin-store';
+import { invoke } from '@tauri-apps/api/core';
+
+interface CosSettings {
+  secretId: string;
+  secretKey: string;
+  bucket: string;
+  region: string;
+  cdnDomain: string;
+  prefix: string;
+}
 
 const props = defineProps<{
   isOpen: boolean;
-  rootPath: string;
+  rootPath: string | null;
 }>();
 
 const emit = defineEmits<{
   (e: 'close'): void;
-  (e: 'save', rootPath: string): void;
+  (e: 'choose-root'): void;
 }>();
 
-const store = new LazyStore('.settings.dat');
-
-const localRootPath = ref(props.rootPath);
 const secretId = ref('');
 const secretKey = ref('');
 const bucket = ref('');
@@ -25,19 +31,19 @@ const prefix = ref('press/');
 
 watch(() => props.isOpen, async (isOpen) => {
   if (isOpen) {
-    localRootPath.value = props.rootPath;
     await loadCosSettings();
   }
 });
 
 const loadCosSettings = async () => {
   try {
-    secretId.value = await store.get<string>('cos_secret_id') || '';
-    secretKey.value = await store.get<string>('cos_secret_key') || '';
-    bucket.value = await store.get<string>('cos_bucket') || '';
-    region.value = await store.get<string>('cos_region') || '';
-    cdnDomain.value = await store.get<string>('cos_cdn_domain') || '';
-    prefix.value = await store.get<string>('cos_prefix') || 'press/';
+    const settings = await invoke<CosSettings>('get_cos_settings');
+    secretId.value = settings.secretId;
+    secretKey.value = settings.secretKey;
+    bucket.value = settings.bucket;
+    region.value = settings.region;
+    cdnDomain.value = settings.cdnDomain;
+    prefix.value = settings.prefix;
   } catch (e) {
     console.error("Failed to load COS settings", e);
   }
@@ -45,15 +51,15 @@ const loadCosSettings = async () => {
 
 const handleSave = async () => {
   try {
-    await store.set('cos_secret_id', secretId.value);
-    await store.set('cos_secret_key', secretKey.value);
-    await store.set('cos_bucket', bucket.value);
-    await store.set('cos_region', region.value);
-    await store.set('cos_cdn_domain', cdnDomain.value);
-    await store.set('cos_prefix', prefix.value);
-    await store.save();
-    
-    emit('save', localRootPath.value);
+    const settings: CosSettings = {
+      secretId: secretId.value,
+      secretKey: secretKey.value,
+      bucket: bucket.value,
+      region: region.value,
+      cdnDomain: cdnDomain.value,
+      prefix: prefix.value,
+    };
+    await invoke('save_cos_settings', { settings });
     emit('close');
   } catch (e) {
     console.error("Failed to save settings", e);
@@ -82,16 +88,21 @@ onMounted(() => {
           <h3 class="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3 pb-1 border-b border-gray-100">General</h3>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">
-              Documents Root Path
+              Notes Folder
             </label>
-            <input
-              type="text"
-              v-model="localRootPath"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-              placeholder="/path/to/docs"
-            />
+            <div class="flex items-center gap-2">
+              <div class="flex-1 min-w-0 px-3 py-2 border border-gray-200 bg-gray-50 rounded-md text-sm text-gray-700 truncate" :title="rootPath ?? ''">
+                {{ rootPath || 'No folder selected' }}
+              </div>
+              <button
+                @click="$emit('choose-root')"
+                class="shrink-0 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                Choose…
+              </button>
+            </div>
             <p class="mt-1 text-xs text-gray-500">
-              Absolute path to your markdown files directory.
+              The app only reads and writes files inside this folder. Changing it takes effect immediately.
             </p>
           </div>
         </div>
