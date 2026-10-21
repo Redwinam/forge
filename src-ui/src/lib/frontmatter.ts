@@ -131,6 +131,12 @@ function isPrimitive(value: unknown): value is string | number | boolean | null 
   return value === null || ['string', 'number', 'boolean'].includes(typeof value);
 }
 
+/** Text typed into a field that held a number stays a number when it still reads as one. */
+export function coerceMetadataInput(previous: unknown, input: string): string | number {
+  if (typeof previous === 'number' && input.trim() !== '' && Number.isFinite(Number(input))) return Number(input);
+  return input;
+}
+
 export function deepEqual(a: unknown, b: unknown): boolean {
   if (Object.is(a, b)) return true;
   if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;

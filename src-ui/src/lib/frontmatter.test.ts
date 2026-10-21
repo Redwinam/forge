@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
-import { joinFrontmatter, serializeFrontmatter, splitFrontmatter } from './frontmatter';
+import { coerceMetadataInput, joinFrontmatter, serializeFrontmatter, splitFrontmatter } from './frontmatter';
 
 const RICH = [
   '---',
@@ -169,5 +169,19 @@ describe('joinFrontmatter', () => {
   it('adds a line break when the block ended the file', () => {
     expect(joinFrontmatter('---\na: 1\n---', 'body\n')).toBe('---\na: 1\n---\nbody\n');
     expect(joinFrontmatter('---\na: 1\n---', '')).toBe('---\na: 1\n---');
+  });
+});
+
+describe('coerceMetadataInput', () => {
+  it('keeps numbers numeric while the text still reads as one', () => {
+    expect(coerceMetadataInput(3, '4')).toBe(4);
+    expect(coerceMetadataInput(3, '4.5')).toBe(4.5);
+    expect(coerceMetadataInput(3, '4a')).toBe('4a');
+    expect(coerceMetadataInput(3, '')).toBe('');
+  });
+
+  it('leaves strings as strings', () => {
+    expect(coerceMetadataInput('3', '4')).toBe('4');
+    expect(coerceMetadataInput(undefined, '4')).toBe('4');
   });
 });

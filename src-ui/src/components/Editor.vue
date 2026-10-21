@@ -13,7 +13,13 @@ import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { TableRow } from '@tiptap/extension-table-row';
 import { invoke } from '@tauri-apps/api/core';
-import { joinFrontmatter, serializeFrontmatter, splitFrontmatter, type Frontmatter } from '../lib/frontmatter';
+import {
+  coerceMetadataInput,
+  joinFrontmatter,
+  serializeFrontmatter,
+  splitFrontmatter,
+  type Frontmatter,
+} from '../lib/frontmatter';
 
 import EditorToolbar from './editor/EditorToolbar.vue';
 import MetadataPanel from './editor/MetadataPanel.vue';
@@ -119,10 +125,13 @@ const editor = useEditor({
   content: parseContent(props.content),
   // @ts-ignore
   contentType: 'markdown',
-  onUpdate: ({ editor }) => {
-    const markdownBody = editor.getMarkdown();
-    const fullContent = stringifyContent(markdownBody);
-    isDirty.value = fullContent !== lastSavedContent.value;
+  // Compare against the editor's own rendering of the file, so opening a note (or undoing back
+  // to it) doesn't count as a change just because the markdown is normalised differently
+  onCreate: ({ editor }) => {
+    lastSavedContent.value = stringifyContent(editor.getMarkdown());
+  },
+  onUpdate: () => {
+    updateDirty();
   },
   extensions: [
     StarterKit.configure({
@@ -229,11 +238,23 @@ watch(() => props.content, (newContent) => {
   rawContent.value = newContent;
 
   const newBody = parseContent(newContent);
-  if (editor.value && newBody !== editor.value.getMarkdown()) {
-    // Force markdown parsing when updating from external prop changes
-    editor.value.commands.setContent(newBody || '', { contentType: 'markdown' });
+  if (editor.value) {
+    if (newBody !== editor.value.getMarkdown()) {
+      // Force markdown parsing when updating from external prop changes
+      editor.value.commands.setContent(newBody || '', { contentType: 'markdown', emitUpdate: false });
+    }
+    lastSavedContent.value = getFullContent();
   }
 }, { immediate: true });
+
+const updateDirty = () => {
+  isDirty.value = getFullContent() !== lastSavedContent.value;
+};
+
+const handleMetadataUpdate = (key: string, input: string) => {
+  metadata.value = { ...metadata.value, [key]: coerceMetadataInput(frontmatter.data[key], input) };
+  updateDirty();
+};
 
 const setLink = () => {
   if (!editor.value) return;
@@ -383,9 +404,11 @@ defineExpose({
       @upload-file="handleFileUploadClick"
     />
 
+    <!-- In raw mode the frontmatter is part of the text being edited -->
     <MetadataPanel 
       :metadata="metadata" 
-      :show="showMetadata"
+      :show="showMetadata && !isRawMode"
+      @update="handleMetadataUpdate"
     />
 
     <div v-if="isUploading" class="absolute top-14 right-4 z-20 bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm shadow-md animate-pulse">
@@ -397,7 +420,7 @@ defineExpose({
         v-model="rawContent" 
         class="w-full h-full p-4 font-mono text-sm bg-white border border-gray-200 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         spellcheck="false"
-        @input="isDirty = true"
+        @input="updateDirty"
       ></textarea>
     </div>
 

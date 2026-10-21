@@ -4,8 +4,9 @@ defineProps<{
   show: boolean;
 }>();
 
-const emit = defineEmits<{
-  (e: 'update:metadata', value: Record<string, any>): void;
+// The panel never mutates the prop: the editor applies the change so it can track unsaved edits
+defineEmits<{
+  (e: 'update', key: string, value: string): void;
 }>();
 </script>
 
@@ -22,7 +23,8 @@ const emit = defineEmits<{
           <div class="relative">
             <input 
               v-if="typeof value === 'string' || typeof value === 'number'"
-              v-model="metadata[key]" 
+              :value="value"
+              @input="$emit('update', String(key), ($event.target as HTMLInputElement).value)" 
               class="w-full bg-white text-gray-800 text-xs font-medium px-3 py-2 rounded border border-gray-200 transition-all duration-200 hover:border-blue-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
               :placeholder="`Enter ${key}...`"
             />
