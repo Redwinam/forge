@@ -120,8 +120,7 @@ fn hmac_sha1(key: &str, data: &str) -> String {
     hex::encode(mac.finalize().into_bytes())
 }
 
-#[tauri::command]
-fn upload_image(app: tauri::AppHandle, file_data: Vec<u8>, extension: String) -> Result<String, String> {
+fn upload_to_cos(app: &tauri::AppHandle, file_data: Vec<u8>, extension: &str, folder: &str) -> Result<String, String> {
     let store = app.store(".settings.dat").map_err(|e| e.to_string())?;
     
     let secret_id = store.get("cos_secret_id").and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
@@ -138,7 +137,7 @@ fn upload_image(app: tauri::AppHandle, file_data: Vec<u8>, extension: String) ->
     // Calculate MD5
     let digest = md5::compute(&file_data);
     let hash = format!("{:x}", digest);
-    let key = format!("{}images/{}.{}", prefix, hash, extension);
+    let key = format!("{}{}/{}.{}", prefix, folder, hash, extension);
     
     // Check if file exists (HEAD request)
     let host = format!("{}.cos.{}.myqcloud.com", bucket, region);
@@ -197,81 +196,20 @@ fn upload_image(app: tauri::AppHandle, file_data: Vec<u8>, extension: String) ->
     }
 }
 
+// Uploads use blocking reqwest. Sync commands run on the main thread and would freeze
+// the window for the whole upload, so run them on the blocking pool instead.
 #[tauri::command]
-fn upload_file(app: tauri::AppHandle, file_data: Vec<u8>, extension: String) -> Result<String, String> {
-    let store = app.store(".settings.dat").map_err(|e| e.to_string())?;
-    
-    let secret_id = store.get("cos_secret_id").and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
-    let secret_key = store.get("cos_secret_key").and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
-    let bucket = store.get("cos_bucket").and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
-    let region = store.get("cos_region").and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
-    let prefix = store.get("cos_prefix").and_then(|v| v.as_str().map(String::from)).unwrap_or("press/".to_string());
-    let cdn_domain = store.get("cos_cdn_domain").and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
+async fn upload_image(app: tauri::AppHandle, file_data: Vec<u8>, extension: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || upload_to_cos(&app, file_data, &extension, "images"))
+        .await
+        .map_err(|e| e.to_string())?
+}
 
-    if secret_id.is_empty() || secret_key.is_empty() || bucket.is_empty() || region.is_empty() {
-        return Err("COS configuration is missing. Please check settings.".to_string());
-    }
-
-    // Calculate MD5
-    let digest = md5::compute(&file_data);
-    let hash = format!("{:x}", digest);
-    let key = format!("{}files/{}.{}", prefix, hash, extension);
-    
-    // Check if file exists (HEAD request)
-    let host = format!("{}.cos.{}.myqcloud.com", bucket, region);
-    let uri = format!("/{}", key);
-    let url = format!("https://{}{}", host, uri);
-    
-    let client = Client::new();
-    
-    // HEAD
-    let now = Utc::now();
-    let start_timestamp = now.timestamp();
-    let end_timestamp = start_timestamp + 600;
-    
-    let mut headers = HashMap::new();
-    headers.insert("Host".to_string(), host.clone());
-    
-    let signature = calculate_signature(&secret_id, &secret_key, "HEAD", &uri, &HashMap::new(), &headers, start_timestamp, end_timestamp);
-    
-    let head_res = client.head(&url)
-        .header("Authorization", signature)
-        .header("Host", &host)
-        .send();
-
-    if let Ok(res) = head_res {
-        if res.status().is_success() {
-            // File exists
-            if cdn_domain.is_empty() {
-                return Ok(format!("https://{}/{}", host, key));
-            } else {
-                return Ok(format!("https://{}/{}", cdn_domain, key));
-            }
-        }
-    }
-
-    // PUT
-    let now = Utc::now();
-    let start_timestamp = now.timestamp();
-    let end_timestamp = start_timestamp + 600;
-    let signature = calculate_signature(&secret_id, &secret_key, "PUT", &uri, &HashMap::new(), &headers, start_timestamp, end_timestamp);
-
-    let res = client.put(&url)
-        .header("Authorization", signature)
-        .header("Host", &host)
-        .body(file_data)
-        .send()
-        .map_err(|e| e.to_string())?;
-
-    if res.status().is_success() {
-        if cdn_domain.is_empty() {
-            Ok(format!("https://{}/{}", host, key))
-        } else {
-            Ok(format!("https://{}/{}", cdn_domain, key))
-        }
-    } else {
-        Err(format!("Upload failed: {}", res.status()))
-    }
+#[tauri::command]
+async fn upload_file(app: tauri::AppHandle, file_data: Vec<u8>, extension: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || upload_to_cos(&app, file_data, &extension, "files"))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 fn main() {
