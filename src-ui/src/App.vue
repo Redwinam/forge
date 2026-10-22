@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import Sidebar from './components/Sidebar.vue';
 import Editor from './components/Editor.vue';
 import SettingsModal from './components/SettingsModal.vue';
+import { isInside } from './lib/paths';
 
 interface AppState {
   rootDir: string | null;
@@ -112,7 +113,7 @@ const handleChooseRoot = async () => {
     const dir = await invoke<string | null>('choose_root_dir');
     if (!dir || dir === rootPath.value) return;
     rootPath.value = dir;
-    if (currentPath.value && !currentPath.value.startsWith(dir + '/')) {
+    if (currentPath.value && !isInside(currentPath.value, dir)) {
       currentPath.value = null;
       currentContent.value = '';
     }

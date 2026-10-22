@@ -3,6 +3,7 @@ import { ref, onMounted, watch, onUnmounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { Settings, ChevronLeft, Menu } from 'lucide-vue-next';
 import FileTreeItem from './FileTreeItem.vue';
+import { basename } from '../lib/paths';
 
 interface FileEntry {
   name: string;
@@ -109,7 +110,7 @@ const handleSelect = (path: string) => {
     <!-- Header -->
     <div class="h-[47px] flex items-center justify-between px-3 border-b border-gray-200 shrink-0">
       <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider truncate" :title="rootPath ?? undefined">
-        {{ rootPath ? rootPath.split('/').pop() : 'Files' }}
+        {{ rootPath ? basename(rootPath) : 'Files' }}
       </span>
       <div class="flex items-center">
         <button 

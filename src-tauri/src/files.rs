@@ -169,12 +169,18 @@ mod tests {
         names
     }
 
+    /// Joins a `/`-separated relative path one component at a time; on Windows a canonical
+    /// `\\?\` path doesn't treat `/` as a separator.
+    fn join(base: &Path, rel: &str) -> PathBuf {
+        rel.split('/').fold(base.to_path_buf(), |path, part| path.join(part))
+    }
+
     fn notes_root() -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("notes");
         fs::create_dir_all(root.join("sub")).unwrap();
         fs::write(root.join("a.md"), "a").unwrap();
-        fs::write(root.join("sub/b.md"), "b").unwrap();
+        fs::write(join(&root, "sub/b.md"), "b").unwrap();
         fs::write(dir.path().join("secret.txt"), "secret").unwrap();
         (dir, root)
     }
@@ -185,9 +191,9 @@ mod tests {
         let canonical_root = fs::canonicalize(&root).unwrap();
 
         assert_eq!(resolve_in_root(&root, &root).unwrap(), canonical_root);
-        assert_eq!(resolve_in_root(&root, &root.join("sub/b.md")).unwrap(), canonical_root.join("sub/b.md"));
+        assert_eq!(resolve_in_root(&root, &join(&root, "sub/b.md")).unwrap(), join(&canonical_root, "sub/b.md"));
         // Not created yet, but its folder is inside the root
-        assert_eq!(resolve_in_root(&root, &root.join("sub/new.md")).unwrap(), canonical_root.join("sub/new.md"));
+        assert_eq!(resolve_in_root(&root, &join(&root, "sub/new.md")).unwrap(), join(&canonical_root, "sub/new.md"));
     }
 
     #[test]
@@ -196,9 +202,9 @@ mod tests {
 
         for path in [
             dir.path().join("secret.txt"),
-            root.join("../secret.txt"),
-            root.join("sub/../../secret.txt"),
-            root.join("../notes-sibling.md"),
+            join(&root, "../secret.txt"),
+            join(&root, "sub/../../secret.txt"),
+            join(&root, "../notes-sibling.md"),
             dir.path().to_path_buf(),
             PathBuf::from("/"),
         ] {
@@ -218,9 +224,25 @@ mod tests {
     }
 
     #[test]
+    fn accepts_either_separator_in_the_requested_path() {
+        let (_dir, root) = notes_root();
+        let mixed = format!("{}/sub/b.md", root.display());
+        assert!(resolve_in_root(&root, Path::new(&mixed)).is_ok());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn ignores_case_differences_on_windows() {
+        let (_dir, root) = notes_root();
+        let upper = PathBuf::from(root.to_string_lossy().to_uppercase());
+        assert!(resolve_in_root(&upper, &join(&root, "sub/b.md")).is_ok());
+        assert!(resolve_in_root(&root, &join(&upper, "sub/b.md")).is_ok());
+    }
+
+    #[test]
     fn rejects_missing_files_in_missing_folders() {
         let (_dir, root) = notes_root();
-        assert!(resolve_in_root(&root, &root.join("nope/new.md")).is_err());
+        assert!(resolve_in_root(&root, &join(&root, "nope/new.md")).is_err());
     }
 
     #[cfg(unix)]
@@ -231,8 +253,8 @@ mod tests {
         std::os::unix::fs::symlink(dir.path(), root.join("escape")).unwrap();
 
         assert!(resolve_in_root(&root, &root.join("link.md")).is_err());
-        assert!(resolve_in_root(&root, &root.join("escape/secret.txt")).is_err());
-        assert!(resolve_in_root(&root, &root.join("escape/new.md")).is_err());
+        assert!(resolve_in_root(&root, &join(&root, "escape/secret.txt")).is_err());
+        assert!(resolve_in_root(&root, &join(&root, "escape/new.md")).is_err());
     }
 
     #[test]

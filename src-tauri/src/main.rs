@@ -232,8 +232,12 @@ mod tests {
             self
         }
 
+        /// `rel` uses `/`; it is joined component by component so the result is a native path.
         fn path(&self, rel: &str) -> String {
-            self.dir.path().join(rel).to_string_lossy().into_owned()
+            rel.split('/')
+                .fold(self.dir.path().to_path_buf(), |path, part| path.join(part))
+                .to_string_lossy()
+                .into_owned()
         }
 
         fn invoke(&self, cmd: &str, body: InvokeBody, headers: &[(&'static str, &str)]) -> Result<Value, Value> {

@@ -3,6 +3,7 @@ import { ref, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { File, Folder, ChevronRight, ChevronDown } from 'lucide-vue-next';
 import { clsx } from 'clsx';
+import { isInside } from '../lib/paths';
 
 interface FileEntry {
   name: string;
@@ -26,7 +27,7 @@ const children = ref<FileEntry[]>([]);
 
 // Auto-expand if currentFile is inside this directory
 watch(() => props.currentFile, async (newVal) => {
-  if (newVal && props.entry.is_dir && newVal.startsWith(props.entry.path + '/')) {
+  if (newVal && props.entry.is_dir && isInside(newVal, props.entry.path)) {
     if (!isOpen.value) {
         isOpen.value = true;
         if (children.value.length === 0) {
