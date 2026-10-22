@@ -47,7 +47,8 @@ fn write_file<R: Runtime>(app: AppHandle<R>, path: String, content: String) -> R
 
 #[tauri::command]
 fn load_app_state<R: Runtime>(app: AppHandle<R>, legacy_root_dir: Option<String>) -> Result<AppState, String> {
-    settings::load_app_state(&*settings::open(&app)?, legacy_root_dir.as_deref())
+    let documents = app.path().document_dir().ok();
+    settings::load_app_state(&*settings::open(&app)?, legacy_root_dir.as_deref(), documents)
 }
 
 /// The root can only change through the native folder picker, so a compromised webview

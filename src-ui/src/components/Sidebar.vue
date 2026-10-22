@@ -20,19 +20,29 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'select', path: string): void;
   (e: 'open-settings'): void;
+  (e: 'choose-root'): void;
 }>();
 
 const rootFiles = ref<FileEntry[]>([]);
+const loadError = ref<string | null>(null);
+const isLoaded = ref(false);
 const width = ref(260);
 const isResizing = ref(false);
 const isCollapsed = ref(false);
 const sidebarRef = ref<HTMLDivElement | null>(null);
 
-watch(() => props.rootPath, (newPath) => {
-  if (newPath) {
-    invoke<FileEntry[]>('list_files', { path: newPath })
-      .then(files => rootFiles.value = files)
-      .catch(console.error);
+watch(() => props.rootPath, async (newPath) => {
+  rootFiles.value = [];
+  loadError.value = null;
+  isLoaded.value = false;
+  if (!newPath) return;
+  try {
+    rootFiles.value = await invoke<FileEntry[]>('list_files', { path: newPath });
+  } catch (e) {
+    console.error(e);
+    loadError.value = String(e);
+  } finally {
+    isLoaded.value = true;
   }
 }, { immediate: true });
 
@@ -121,6 +131,19 @@ const handleSelect = (path: string) => {
 
     <!-- File Tree -->
     <div class="flex-1 overflow-y-auto py-2 custom-scrollbar">
+      <div v-if="!rootPath || loadError" class="px-4 py-6 text-sm text-gray-500 space-y-3">
+        <p class="font-medium text-gray-700">{{ rootPath ? "Can't open this folder" : 'Choose a folder for your notes' }}</p>
+        <p v-if="loadError" class="text-xs break-words">{{ loadError }}</p>
+        <button
+          @click="$emit('choose-root')"
+          class="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-100"
+        >
+          Choose folder…
+        </button>
+      </div>
+      <p v-else-if="isLoaded && rootFiles.length === 0" class="px-4 py-6 text-xs text-gray-400">
+        This folder has no notes yet.
+      </p>
       <FileTreeItem
         v-for="file in rootFiles"
         :key="file.path"

@@ -8,13 +8,15 @@ const calls: { cmd: string; args: any }[] = [];
 let failWrites = false;
 let rootDir: string | null = '/notes';
 let pickedRoot: string | null = null;
+let lastOpenedFile: string | null = null;
+const unreadableDirs = new Set<string>();
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(async (cmd: string, args: any) => {
     calls.push({ cmd, args });
     switch (cmd) {
       case 'load_app_state':
-        return { rootDir, lastOpenedFile: null, sidebarWidth: null };
+        return { rootDir, lastOpenedFile, sidebarWidth: null };
       case 'choose_root_dir':
         rootDir = pickedRoot ?? rootDir;
         return pickedRoot;
@@ -27,6 +29,7 @@ vi.mock('@tauri-apps/api/core', () => ({
       case 'clear_cos_credentials':
         return null;
       case 'list_files':
+        if (unreadableDirs.has(args.path)) throw 'No such file or directory (os error 2)';
         return Object.keys(files)
           .filter((p) => p.startsWith(args.path + '/'))
           .map((p) => ({ name: p.split('/').pop(), path: p, is_dir: false }));
@@ -78,6 +81,8 @@ beforeEach(async () => {
   failWrites = false;
   rootDir = '/notes';
   pickedRoot = null;
+  lastOpenedFile = null;
+  unreadableDirs.clear();
   localStorage.clear();
   vi.stubGlobal('alert', vi.fn());
   wrapper = mount(App, { attachTo: document.body });
@@ -201,5 +206,51 @@ describe('COS settings', () => {
       secretId: 'AKIDnew',
       secretKey: 'new-key',
     });
+  });
+});
+
+describe('starting up', () => {
+  const restart = async () => {
+    wrapper!.unmount();
+    calls.length = 0;
+    wrapper = mount(App, { attachTo: document.body });
+    await flushPromises();
+  };
+
+  it('does not suggest any built-in folder when none was configured', async () => {
+    await restart();
+    expect(calls.find((c) => c.cmd === 'load_app_state')!.args).toEqual({ legacyRootDir: null });
+  });
+
+  it('asks for a folder when there is none', async () => {
+    rootDir = null;
+    await restart();
+    expect(wrapper!.text()).toContain('Choose a folder for your notes');
+    pickedRoot = '/notes';
+    await wrapper!.findAll('button').find((b) => b.text() === 'Choose folder…')!.trigger('click');
+    await flushPromises();
+    expect(wrapper!.text()).toContain('a.md');
+  });
+
+  it('explains when the folder cannot be read', async () => {
+    unreadableDirs.add('/notes');
+    await restart();
+    expect(wrapper!.text()).toContain("Can't open this folder");
+    expect(wrapper!.text()).toContain('No such file or directory');
+    expect(wrapper!.findAll('button').some((b) => b.text() === 'Choose folder…')).toBe(true);
+  });
+
+  it('quietly forgets a last opened file that no longer exists', async () => {
+    lastOpenedFile = '/notes/deleted.md';
+    await restart();
+    expect(alert).not.toHaveBeenCalled();
+    expect(calls).toContainEqual({ cmd: 'set_last_opened_file', args: { path: null } });
+    expect(wrapper!.find('.ProseMirror').exists()).toBe(false);
+  });
+
+  it('reopens the last file', async () => {
+    lastOpenedFile = '/notes/b.md';
+    await restart();
+    expect(wrapper!.find('.ProseMirror').text()).toContain('正文 B');
   });
 });

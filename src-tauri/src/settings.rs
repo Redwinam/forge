@@ -81,18 +81,22 @@ pub fn set_root_dir<R: Runtime>(store: &Store<R>, dir: &Path) -> Result<(), Stri
 
 /// Returns the root to use on startup. Earlier versions kept the root in the webview's
 /// localStorage; that value is adopted once if nothing is configured here yet, after which
-/// only a folder the user picks in the native dialog can change it.
-pub fn initial_root_dir(configured: Option<PathBuf>, legacy: Option<&str>) -> Option<PathBuf> {
-    configured.or_else(|| {
-        legacy
-            .map(PathBuf::from)
-            .filter(|dir| dir.is_absolute() && dir.is_dir())
-    })
+/// only a folder the user picks in the native dialog can change it. A fresh install starts
+/// in `fallback` (the Documents folder) and can pick another folder from there.
+pub fn initial_root_dir(configured: Option<PathBuf>, legacy: Option<&str>, fallback: Option<PathBuf>) -> Option<PathBuf> {
+    let existing_dir = |dir: &PathBuf| dir.is_absolute() && dir.is_dir();
+    configured
+        .or_else(|| legacy.map(PathBuf::from).filter(existing_dir))
+        .or_else(|| fallback.filter(existing_dir))
 }
 
-pub fn load_app_state<R: Runtime>(store: &Store<R>, legacy_root_dir: Option<&str>) -> Result<AppState, String> {
+pub fn load_app_state<R: Runtime>(
+    store: &Store<R>,
+    legacy_root_dir: Option<&str>,
+    fallback_root_dir: Option<PathBuf>,
+) -> Result<AppState, String> {
     let configured = root_dir(store);
-    let root = initial_root_dir(configured.clone(), legacy_root_dir);
+    let root = initial_root_dir(configured.clone(), legacy_root_dir, fallback_root_dir);
     if configured.is_none() {
         if let Some(root) = &root {
             set_root_dir(store, root)?;
@@ -206,27 +210,38 @@ pub fn migrate_plaintext_credentials<R: Runtime>(store: &Store<R>, secrets: &Sec
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn keeps_the_configured_root() {
         let dir = tempfile::tempdir().unwrap();
         let configured = Some(PathBuf::from("/configured"));
         let legacy = dir.path().to_str();
-        assert_eq!(initial_root_dir(configured.clone(), legacy), configured);
+        assert_eq!(initial_root_dir(configured.clone(), legacy, Some(dir.path().into())), configured);
     }
 
     #[test]
     fn adopts_an_existing_legacy_root_once() {
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(initial_root_dir(None, dir.path().to_str()), Some(dir.path().to_path_buf()));
+        let documents = dir.path().join("Documents");
+        fs::create_dir(&documents).unwrap();
+        assert_eq!(initial_root_dir(None, dir.path().to_str(), Some(documents)), Some(dir.path().to_path_buf()));
     }
 
     #[test]
-    fn ignores_a_legacy_root_that_is_missing_or_relative() {
+    fn falls_back_to_the_documents_folder() {
         let dir = tempfile::tempdir().unwrap();
         let missing = dir.path().join("missing");
-        assert_eq!(initial_root_dir(None, missing.to_str()), None);
-        assert_eq!(initial_root_dir(None, Some("relative/notes")), None);
-        assert_eq!(initial_root_dir(None, None), None);
+        let documents = Some(dir.path().to_path_buf());
+        assert_eq!(initial_root_dir(None, missing.to_str(), documents.clone()), documents);
+        assert_eq!(initial_root_dir(None, Some("relative/notes"), documents.clone()), documents);
+        assert_eq!(initial_root_dir(None, None, documents.clone()), documents);
+    }
+
+    #[test]
+    fn has_no_root_when_even_the_documents_folder_is_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(initial_root_dir(None, None, Some(dir.path().join("missing"))), None);
+        assert_eq!(initial_root_dir(None, None, None), None);
     }
 }

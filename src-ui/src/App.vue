@@ -25,18 +25,30 @@ const LEGACY_ROOT_KEY = 'forge_root_path';
 
 onMounted(async () => {
   try {
-    const legacyRootDir = localStorage.getItem(LEGACY_ROOT_KEY) || '/Users/redwinam/Developer/notes/Press/docs';
+    // Without a configured folder the backend falls back to the Documents folder
+    const legacyRootDir = localStorage.getItem(LEGACY_ROOT_KEY);
     const state = await invoke<AppState>('load_app_state', { legacyRootDir });
     if (state.rootDir) localStorage.removeItem(LEGACY_ROOT_KEY);
     rootPath.value = state.rootDir;
     sidebarWidth.value = state.sidebarWidth;
     if (state.lastOpenedFile) {
-      handleFileSelect(state.lastOpenedFile);
+      await reopenLastFile(state.lastOpenedFile);
     }
   } catch (e) {
     console.error("Failed to load app state", e);
   }
 });
+
+// The file may have been moved or deleted since; that's no reason to greet the user with an error
+const reopenLastFile = async (path: string) => {
+  try {
+    currentContent.value = await invoke<string>('read_file', { path });
+    currentPath.value = path;
+  } catch (e) {
+    console.warn("Last opened file is gone", e);
+    await invoke('set_last_opened_file', { path: null }).catch(() => {});
+  }
+};
 
 watch(currentPath, async (newPath) => {
   if (newPath) {
@@ -118,6 +130,7 @@ const handleChooseRoot = async () => {
       :currentFile="currentPath"
       :initialWidth="sidebarWidth"
       @select="handleFileSelect"
+      @choose-root="handleChooseRoot"
       @open-settings="isSettingsOpen = true"
     />
     <div class="flex-1 flex flex-col h-full overflow-hidden">
