@@ -34,10 +34,12 @@ jobs:
       - name: setup node
         uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src-ui/package-lock.json
 
       - name: install frontend dependencies
-        run: cd src-ui && npm install
+        run: cd src-ui && npm ci
 
       - name: setup rust
         uses: dtolnay/rust-toolchain@stable
@@ -45,10 +47,11 @@ jobs:
           # Those targets are only used on macos runners so it's in an `if` to slightly speed up windows and linux builds.
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || matrix.platform == 'macos-15-intel' && 'x86_64-apple-darwin' || '' }}
 
+      # The Cargo workspace (and its target/ dir) is at the repo root, not in src-tauri
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
+          workspaces: '. -> target'
 
       - uses: tauri-apps/tauri-action@v0
         env:
