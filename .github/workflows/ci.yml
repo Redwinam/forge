@@ -1,0 +1,73 @@
+name: CI
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: src-ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src-ui/package-lock.json
+
+      - run: npm ci
+
+      - name: vue-tsc
+        run: npx vue-tsc -b
+
+      - name: vitest
+        run: npm test
+
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ubuntu-22.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src-ui/package-lock.json
+
+      # tauri::generate_context!() embeds src-ui/dist at compile time
+      - name: build frontend
+        working-directory: src-ui
+        run: |
+          npm ci
+          npx vite build
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+
+      - name: clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo test
+        run: cargo test

@@ -254,3 +254,34 @@ describe('starting up', () => {
     expect(wrapper!.find('.ProseMirror').text()).toContain('正文 B');
   });
 });
+
+describe('raw markdown mode', () => {
+  const toggleRaw = async () => {
+    await wrapper!.find('button[title^="Switch to"]').trigger('click');
+    await flushPromises();
+  };
+
+  it('edits the frontmatter as text and saves exactly what was typed', async () => {
+    await toggleRaw();
+    const textarea = wrapper!.find('textarea');
+    // The panel is hidden so the frontmatter can't be edited in two places at once
+    expect(wrapper!.text()).not.toContain('Frontmatter');
+    expect((textarea.element as HTMLTextAreaElement).value.startsWith(NOTE_A.split('# A')[0]!)).toBe(true);
+    expect(hasUnsavedMarker()).toBe(false);
+
+    const edited = (textarea.element as HTMLTextAreaElement).value.replace('title: 旧标题', 'title: 源码模式');
+    await textarea.setValue(edited);
+    expect(hasUnsavedMarker()).toBe(true);
+    await openFile('b.md');
+
+    expect(writes).toEqual([{ path: '/notes/a.md', content: edited }]);
+  });
+
+  it('picks up frontmatter edits when switching back', async () => {
+    await toggleRaw();
+    const textarea = wrapper!.find('textarea');
+    await textarea.setValue((textarea.element as HTMLTextAreaElement).value.replace('count: 3', 'count: 5'));
+    await toggleRaw();
+    expect(metadataInput('5').exists()).toBe(true);
+  });
+});

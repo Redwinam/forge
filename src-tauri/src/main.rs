@@ -384,4 +384,45 @@ mod tests {
         assert_eq!(app.keychain_value(), None);
         assert_eq!(app.invoke_json("get_cos_settings", json!({})).unwrap()["hasCredentials"], false);
     }
+
+    #[test]
+    fn adopts_the_legacy_root_only_while_none_is_configured() {
+        let app = TestApp::new();
+        let first = app.path("first");
+        let second = app.path("second");
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir_all(&second).unwrap();
+
+        let state = app.invoke_json("load_app_state", json!({ "legacyRootDir": first })).unwrap();
+        assert_eq!(state["rootDir"], json!(first));
+        // A later value from the webview can't move the root anymore
+        let state = app.invoke_json("load_app_state", json!({ "legacyRootDir": second })).unwrap();
+        assert_eq!(state["rootDir"], json!(first));
+    }
+
+    #[test]
+    fn remembers_the_last_file_and_sidebar_width() {
+        let app = TestApp::new().with_notes();
+        let note = app.path("notes/a.md");
+        app.invoke_json("set_last_opened_file", json!({ "path": note })).unwrap();
+        app.invoke_json("set_sidebar_width", json!({ "width": 320.0 })).unwrap();
+
+        let state = app.invoke_json("load_app_state", json!({})).unwrap();
+        assert_eq!(state["lastOpenedFile"], json!(note));
+        assert_eq!(state["sidebarWidth"], json!(320.0));
+        assert!(app.settings_on_disk().contains("320"));
+
+        app.invoke_json("set_last_opened_file", json!({ "path": null })).unwrap();
+        assert_eq!(app.invoke_json("load_app_state", json!({})).unwrap()["lastOpenedFile"], Value::Null);
+    }
+
+    #[test]
+    fn saves_notes_atomically_through_the_command() {
+        let app = TestApp::new().with_notes();
+        app.invoke_json("write_file", json!({ "path": app.path("notes/a.md"), "content": "# 新内容" })).unwrap();
+
+        let names: Vec<_> = fs::read_dir(app.path("notes")).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(names, ["a.md"], "no temp file left behind");
+        assert_eq!(fs::read_to_string(app.path("notes/a.md")).unwrap(), "# 新内容");
+    }
 }
